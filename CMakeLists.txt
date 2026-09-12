@@ -40,9 +40,6 @@ add_subdirectory(stubs)
 add_subdirectory(src)
 add_subdirectory(example)
 
-configure_file("${PROJECT_SOURCE_DIR}/version.h.in"
-               "${PROJECT_BINARY_DIR}/version.h")
-
 install(TARGETS ${TASK_CLI} RUNTIME DESTINATION bin)
 
 set(CPACK_GENERATOR DEB)
