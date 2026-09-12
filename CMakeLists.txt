@@ -37,16 +37,22 @@ if(WITH_TESTS)
   FetchContent_MakeAvailable(googletest)
 endif()
 
-add_executable(${TASK_CLI} "src/main.cpp")
+add_library(dgds-warnings INTERFACE)
+add_library(dgds::warnings ALIAS dgds-warnings)
+
+if(MSVC)
+  target_compile_options(dgds-warnings INTERFACE /W4)
+else()
+  target_compile_options(dgds-warnings INTERFACE -Wall -Wextra -pedantic -Werror)
+endif()
+
+add_subdirectory(libs)
+add_subdirectory(stubs)
+add_subdirectory(src)
+add_subdirectory(example)
 
 configure_file("${PROJECT_SOURCE_DIR}/version.h.in"
                "${PROJECT_BINARY_DIR}/version.h")
-
-if(MSVC)
-  target_compile_options(${TASK_CLI} PRIVATE /W4)
-else()
-  target_compile_options(${TASK_CLI} PRIVATE -Wall -Wextra -pedantic -Werror)
-endif()
 
 install(TARGETS ${TASK_CLI} RUNTIME DESTINATION bin)
 
@@ -60,13 +66,7 @@ include(CPack)
 
 if(WITH_TESTS)
   add_executable(${TASK_TEST} "tests/test_dgds.cpp")
-  target_link_libraries(${TASK_TEST} PRIVATE GTest::gtest_main)
-
-  if(MSVC)
-    target_compile_options(${TASK_TEST} PRIVATE /W4)
-  else()
-    target_compile_options(${TASK_TEST} PRIVATE -Wall -Wextra -pedantic -Werror)
-  endif()
+  target_link_libraries(${TASK_TEST} PRIVATE GTest::gtest_main dgds::warnings)
 
   include(GoogleTest)
   gtest_discover_tests(${TASK_TEST})

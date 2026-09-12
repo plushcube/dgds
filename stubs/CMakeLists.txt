@@ -1,0 +1,6 @@
+add_subdirectory(blob-store)
+add_subdirectory(key-store)
+add_subdirectory(metadata-registry)
+add_subdirectory(identity-registry)
+add_subdirectory(device-key)
+add_subdirectory(receipt-store)
