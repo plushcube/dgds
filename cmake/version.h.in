@@ -1,0 +1,9 @@
+#pragma once
+
+#include <string_view>
+
+namespace dgds::@DGDS_VERSION_COMPONENT@ {
+
+inline constexpr std::string_view k_version{"@DGDS_VERSION@"};
+
+}

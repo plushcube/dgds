@@ -23,6 +23,7 @@ if(WITH_TESTS)
 endif()
 
 include(cmake/dependencies.cmake)
+include(cmake/version.cmake)
 
 add_library(dgds-warnings INTERFACE)
 add_library(dgds::warnings ALIAS dgds-warnings)
