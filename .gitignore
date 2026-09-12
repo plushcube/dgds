@@ -1,3 +1,11 @@
+# MacOS stuff
+.DS_Store
+
+# Coding agents
+.omp
+.pi
+openspec/
+
 # Prerequisites
 *.d
 
@@ -40,6 +48,8 @@
 *.app
 
 # Build directories
+.build/
+.build-tsan/
 build/
 Build/
 build-*/

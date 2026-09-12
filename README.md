@@ -1,2 +1,3 @@
-# dgds
+# DGDS
+
 Digital goods distribution system
