@@ -4,14 +4,13 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.12)
 set(PATCH_VERSION
     "1"
     CACHE INTERNAL "Patch version")
-set(PROJECT_VERSION "0.0.${PATCH_VERSION}")
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-project("DGDS" VERSION ${PROJECT_VERSION})
+project("DGDS" VERSION 0.0.${PATCH_VERSION})
 
 set(TASK_CLI "dgds")
 set(TASK_TEST "test_dgds")
@@ -24,6 +23,8 @@ endif()
 
 include(cmake/dependencies.cmake)
 include(cmake/version.cmake)
+
+dgds_generate_product_version("${PROJECT_VERSION}")
 
 add_library(dgds-warnings INTERFACE)
 add_library(dgds::warnings ALIAS dgds-warnings)

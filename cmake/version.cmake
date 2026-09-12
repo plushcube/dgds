@@ -1,4 +1,4 @@
-function(dgds_apply_version target component version)
+function(dgds_version_parts version)
   string(REPLACE "." ";" parts "${version}")
   list(LENGTH parts part_count)
   if(NOT part_count EQUAL 3)
@@ -15,16 +15,40 @@ function(dgds_apply_version target component version)
     endif()
   endforeach()
 
+  set(DGDS_VERSION_MAJOR
+      "${major}"
+      PARENT_SCOPE)
+  set(DGDS_VERSION_MINOR
+      "${minor}"
+      PARENT_SCOPE)
+  set(DGDS_VERSION_PATCH
+      "${patch}"
+      PARENT_SCOPE)
+endfunction()
+
+function(dgds_apply_version target component version)
+  dgds_version_parts("${version}")
+
+  set(DGDS_VERSION_NAMESPACE "dgds::${component}")
   set(DGDS_VERSION "${version}")
-  set(DGDS_VERSION_COMPONENT "${component}")
 
   configure_file(
     "${CMAKE_SOURCE_DIR}/cmake/version.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/include/dgds/${component}/version.h" @ONLY)
 
   set_target_properties(${target} PROPERTIES VERSION "${version}" SOVERSION
-                                             "${major}")
+                                             "${DGDS_VERSION_MAJOR}")
 
   target_include_directories(
     ${target} INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>)
+endfunction()
+
+function(dgds_generate_product_version version)
+  dgds_version_parts("${version}")
+
+  set(DGDS_VERSION_NAMESPACE "dgds")
+  set(DGDS_VERSION "${version}")
+
+  configure_file("${CMAKE_SOURCE_DIR}/cmake/version.h.in"
+                 "${PROJECT_BINARY_DIR}/include/dgds/version.h" @ONLY)
 endfunction()

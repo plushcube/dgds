@@ -2,7 +2,7 @@
 
 #include <string_view>
 
-namespace dgds::@DGDS_VERSION_COMPONENT@ {
+namespace @DGDS_VERSION_NAMESPACE@ {
 
 inline constexpr std::string_view k_version{"@DGDS_VERSION@"};
 
