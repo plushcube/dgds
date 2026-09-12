@@ -1,0 +1,58 @@
+name: "C++ Release Build"
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Resolve version
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! printf '%s' "$version" | grep -Eq '^0\.0\.[0-9]+$'; then
+            echo "Тег $GITHUB_REF_NAME не соответствует схеме v0.0.<номер>" >&2
+            exit 1
+          fi
+          echo "patch=${version##*.}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev
+
+      - name: Configure CMake
+        run: |
+          export LANG=C.UTF-8 LC_ALL=C.UTF-8
+          cmake -B .build -DPATCH_VERSION=${{ steps.version.outputs.patch }} -DWITH_TESTS=ON
+
+      - name: Build
+        run: cmake --build .build --parallel
+
+      - name: Test
+        run: ctest --test-dir .build --output-on-failure
+
+      - name: Package
+        run: cmake --build .build --target package
+
+      - name: Resolve package
+        id: package
+        run: echo "deb=$(find .build -maxdepth 1 -name '*.deb' | head -n 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          files: ${{ steps.package.outputs.deb }}
+          draft: false
+          prerelease: false

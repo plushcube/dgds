@@ -1,0 +1,36 @@
+name: "C++ CI"
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y libssl-dev
+          else
+            brew install openssl@3
+          fi
+
+      - name: Configure CMake
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            export LANG=C.UTF-8 LC_ALL=C.UTF-8
+          fi
+          cmake -B .build -DPATCH_VERSION=${{ github.run_number }} -DWITH_TESTS=ON
+
+      - name: Build
+        run: cmake --build .build --parallel
+
+      - name: Test
+        run: ctest --test-dir .build --output-on-failure
