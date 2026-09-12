@@ -20,22 +20,9 @@ option(WITH_TESTS "Whether to build tests" ON)
 
 if(WITH_TESTS)
   enable_testing()
-
-  include(FetchContent)
-
-  FetchContent_Declare(
-    googletest
-    URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip)
-
-  if(MSVC)
-    set(gtest_force_shared_crt
-        ON
-        CACHE BOOL "" FORCE)
-  endif()
-
-  set(INSTALL_GTEST OFF)
-  FetchContent_MakeAvailable(googletest)
 endif()
+
+include(cmake/dependencies.cmake)
 
 add_library(dgds-warnings INTERFACE)
 add_library(dgds::warnings ALIAS dgds-warnings)
