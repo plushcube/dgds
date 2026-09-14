@@ -1,5 +1,4 @@
-cmake_minimum_required(VERSION 3.12)
-set(CMAKE_POLICY_VERSION_MINIMUM 3.12)
+cmake_minimum_required(VERSION 3.28)
 
 set(PATCH_VERSION
     "1"
@@ -11,6 +10,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project("DGDS" VERSION 0.0.${PATCH_VERSION})
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/bin")
 
 set(TASK_CLI "dgds")
 
