@@ -13,7 +13,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project("DGDS" VERSION 0.0.${PATCH_VERSION})
 
 set(TASK_CLI "dgds")
-set(TASK_TEST "test_dgds")
 
 option(WITH_TESTS "Whether to build tests" ON)
 
@@ -23,6 +22,7 @@ endif()
 
 include(cmake/dependencies.cmake)
 include(cmake/version.cmake)
+include(cmake/tests.cmake)
 
 dgds_generate_product_version("${PROJECT_VERSION}")
 
@@ -51,9 +51,5 @@ set(CPACK_PACKAGE_CONTACT "https://t.me/plushcube")
 include(CPack)
 
 if(WITH_TESTS)
-  add_executable(${TASK_TEST} "tests/test_dgds.cpp")
-  target_link_libraries(${TASK_TEST} PRIVATE GTest::gtest_main dgds::warnings)
-
-  include(GoogleTest)
-  gtest_discover_tests(${TASK_TEST})
+  add_subdirectory(tests)
 endif()
