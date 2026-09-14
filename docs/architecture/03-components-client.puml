@@ -1,0 +1,30 @@
+@startuml
+!include <C4/C4_Component>
+
+title DGDS — компоненты клиента (C4, уровень 3)
+
+Container_Boundary(client, "Клиентская библиотека (dgds-client)") {
+  Component(facade, "Фасад", "публичный заголовок client.h")
+  Component(services, "Сценарии", "регистрация, вход, каталог, публикация, покупка, получение контента")
+  Component(models, "Модели", "DTO, разбор и сборка JSON")
+  Component(transport, "Транспорт", "реализация ApiTransport поверх HTTP")
+  Component(platform, "Платформенный адаптер", "реализация DeviceKey: Keychain или Secure Enclave")
+  Component(receipts, "Хранилище чека", "реализация ReceiptStore: файл-заглушка или системное хранилище")
+}
+
+Container_Ext(host, "Приложение-хост", "C++", "Выводит полученный контент потребителю и не получает ключей")
+System_Ext(devicekey, "Защищённое хранилище устройства", "Keychain или Secure Enclave")
+Container_Ext(server, "Серверное приложение", "C++", "HTTP-поверхность")
+Container_Ext(core, "Ядро (dgds-core)", "C++", "Канонизация, envelope, проверка подписи, порты")
+
+Rel(host, facade, "Запрашивает операции и получает расшифрованный контент только в память")
+Rel(facade, services, "Передаёт вызов")
+Rel(services, models, "Строит и разбирает данные")
+Rel(services, transport, "Отправляет запросы")
+Rel(services, receipts, "Сохраняет чек как непрозрачный блок")
+Rel(services, platform, "Разворачивает ключ и расшифровывает одной операцией")
+Rel(services, core, "Домен: канонизация, идентичность, проверка подписи")
+Rel(platform, devicekey, "Обращается к ключу устройства")
+Rel(transport, server, "HTTP и JSON")
+
+@enduml
