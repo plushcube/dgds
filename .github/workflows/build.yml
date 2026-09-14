@@ -13,6 +13,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Check architecture renders
+        if: runner.os == 'Linux'
+        run: ./docs/architecture/check_renders.sh
+
       - name: Install dependencies
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then

@@ -3,6 +3,9 @@
 
 title DGDS — контейнеры (C4, уровень 2)
 
+skinparam nodesep 60
+skinparam ranksep 90
+
 Person(user, "Пользователь", "Автор или покупатель")
 
 System_Boundary(dgds, "DGDS") {
