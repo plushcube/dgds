@@ -4,46 +4,52 @@ set -u
 
 cd "$(dirname "$0")/../.." || exit 1
 
-image="plantuml/plantuml:1.2026.8"
 architecture="docs/architecture"
-renders=$(mktemp -d)
-trap 'rm -rf "$renders"' EXIT
+manifest="$architecture/renders.sha256"
+status=0
 
-sources=("$architecture"/*.puml)
-
-if command -v docker >/dev/null; then
-    render() { docker run --rm -v "$PWD:$PWD" -v "$renders:$renders" -w "$PWD" "$image" "$@"; }
-elif command -v plantuml >/dev/null; then
-    echo "  Закреплённый рендерер недоступен, используется локальный plantuml: результат может отличаться по версии"
-    render() { plantuml "$@"; }
-else
-    echo "  PlantUML недоступен, проверка рендеров пропущена"
-    exit 0
-fi
-
-if ! render -tsvg -o "$renders" "${sources[@]}"; then
-    echo "❌ Диаграммы не собираются"
+if [ ! -f "$manifest" ]; then
+    echo "❌ Нет манифеста рендеров: $manifest"
     exit 1
 fi
 
-status=0
+while read -r name puml_hash render_hash; do
+    source="$architecture/$name.puml"
+    render_file="$architecture/$name.svg"
 
-for source in "${sources[@]}"; do
-    name=$(basename "$source" .puml)
-    committed="$architecture/$name.svg"
+    if [ ! -f "$source" ]; then
+        echo "❌ Исходник из манифеста пропал: $source"
+        status=1
+        continue
+    fi
 
-    if [ ! -f "$committed" ]; then
+    if [ ! -f "$render_file" ]; then
         echo "❌ Нет рендера для $source"
         status=1
-    elif ! cmp -s "$committed" "$renders/$name.svg"; then
-        echo "❌ Рендер устарел: $committed"
+        continue
+    fi
+
+    if [ "$(git hash-object "$source")" != "$puml_hash" ]; then
+        echo "❌ Рендер устарел: $render_file"
+        status=1
+    elif [ "$(git hash-object "$render_file")" != "$render_hash" ]; then
+        echo "❌ Рендер изменён в обход render.sh: $render_file"
+        status=1
+    fi
+done < "$manifest"
+
+for source in "$architecture"/*.puml; do
+    name=$(basename "$source" .puml)
+
+    if ! grep -q "^$name " "$manifest"; then
+        echo "❌ Нет записи в манифесте: $source"
         status=1
     fi
 done
 
-for committed in "$architecture"/*.svg; do
-    if [ ! -f "${committed%.svg}.puml" ]; then
-        echo "❌ Рендер без исходника: $committed"
+for render_file in "$architecture"/*.svg; do
+    if [ ! -f "${render_file%.svg}.puml" ]; then
+        echo "❌ Рендер без исходника: $render_file"
         status=1
     fi
 done
