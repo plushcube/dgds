@@ -1,0 +1,14 @@
+#pragma once
+
+#include <dgds/core/identity/canonical_form.h>
+#include <dgds/core/models/content_identity.h>
+#include <dgds/core/models/result.h>
+
+#include <string>
+
+namespace dgds::core {
+
+[[nodiscard]] Result<ContentIdentity> content_identity(Content content);
+[[nodiscard]] std::string to_hex(const ContentIdentity &identity);
+
+} // namespace dgds::core
