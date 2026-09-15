@@ -1,4 +1,5 @@
-add_library(dgds-core STATIC "src/identity/canonical_form.cpp"
+add_library(dgds-core STATIC "src/crypto/aead.cpp"
+                             "src/identity/canonical_form.cpp"
                              "src/identity/content_identity.cpp"
                              "src/watermark/mark_codec.cpp")
 add_library(dgds::core ALIAS dgds-core)

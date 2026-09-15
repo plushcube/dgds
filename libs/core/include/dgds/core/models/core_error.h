@@ -5,6 +5,9 @@ namespace dgds::core {
 enum class CoreError {
   digest_failed,
   storage_failed,
+  algorithm_unsupported,
+  crypto_failed,
+  authentication_failed,
   mark_malformed,
   mark_version_unsupported,
   mark_checksum_mismatch,
