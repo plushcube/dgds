@@ -1,6 +1,7 @@
 #include <dgds/core/envelope/package.h>
 
 #include <dgds/core/crypto/aead.h>
+#include <dgds/core/crypto/secure_buffer.h>
 #include <dgds/core/envelope/keys.h>
 #include <dgds/core/identity/content_identity.h>
 #include <dgds/core/signature/author_signature.h>
@@ -17,7 +18,7 @@ Content as_content(const ContentIdentity &identity) {
 
 } // namespace
 
-Result<ContentBuffer> open_package(const Package &package, const SymmetricKey &purchase_key) {
+Result<SecureBuffer> open_package(const Package &package, const SymmetricKey &purchase_key) {
   if (package.version != k_package_version) {
     return std::unexpected(CoreError::package_version_unsupported);
   }
@@ -30,13 +31,13 @@ Result<ContentBuffer> open_package(const Package &package, const SymmetricKey &p
     return std::unexpected(blob_key.error());
   }
 
-  const auto plaintext = decrypt(package.content, blob_key.value(), bound_identity);
+  auto plaintext = decrypt(package.content, blob_key.value(), bound_identity);
 
   if (!plaintext.has_value()) {
     return std::unexpected(plaintext.error());
   }
 
-  const auto identity = content_identity(plaintext.value());
+  const auto identity = content_identity(plaintext->view());
 
   if (!identity.has_value()) {
     return std::unexpected(identity.error());

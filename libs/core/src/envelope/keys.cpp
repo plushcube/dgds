@@ -42,7 +42,7 @@ Result<SymmetricKey> unwrap_key(const SealedContent &wrapped, const SymmetricKey
   }
 
   SymmetricKey key{};
-  std::copy(plaintext->begin(), plaintext->end(), key.begin());
+  std::copy(plaintext->data(), plaintext->data() + plaintext->size(), key.begin());
 
   return key;
 }

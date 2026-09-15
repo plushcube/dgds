@@ -1,5 +1,6 @@
 #pragma once
 
+#include <dgds/core/crypto/secure_buffer.h>
 #include <dgds/core/models/content.h>
 #include <dgds/core/models/package.h>
 #include <dgds/core/models/result.h>
@@ -7,6 +8,6 @@
 
 namespace dgds::core {
 
-[[nodiscard]] Result<ContentBuffer> open_package(const Package &package, const SymmetricKey &purchase_key);
+[[nodiscard]] Result<SecureBuffer> open_package(const Package &package, const SymmetricKey &purchase_key);
 
 } // namespace dgds::core

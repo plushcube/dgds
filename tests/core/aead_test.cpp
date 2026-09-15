@@ -36,7 +36,7 @@ TEST(Aead, RoundTripKeepsContent) {
   const auto opened = decrypt(sealed.value(), key, k_associated_data);
 
   ASSERT_TRUE(opened.has_value());
-  EXPECT_EQ(opened.value(), text);
+  EXPECT_EQ(opened->view(), text);
 }
 
 TEST(Aead, RoundTripKeepsEmptyContent) {
@@ -48,7 +48,7 @@ TEST(Aead, RoundTripKeepsEmptyContent) {
   const auto opened = decrypt(sealed.value(), key, k_associated_data);
 
   ASSERT_TRUE(opened.has_value());
-  EXPECT_TRUE(opened.value().empty());
+  EXPECT_TRUE(opened->empty());
 }
 
 TEST(Aead, RejectsWrongKey) {

@@ -88,7 +88,7 @@ Result<SealedContent> encrypt(Content plaintext, const SymmetricKey &key, Conten
   return sealed;
 }
 
-Result<ContentBuffer> decrypt(const SealedContent &sealed, const SymmetricKey &key, Content associated_data) {
+Result<SecureBuffer> decrypt(const SealedContent &sealed, const SymmetricKey &key, Content associated_data) {
   if (sealed.algorithm != k_aead_algorithm) {
     return std::unexpected(CoreError::algorithm_unsupported);
   }
@@ -121,16 +121,15 @@ Result<ContentBuffer> decrypt(const SealedContent &sealed, const SymmetricKey &k
     return std::unexpected(CoreError::crypto_failed);
   }
 
-  ContentBuffer plaintext;
-  plaintext.resize(sealed.ciphertext.size());
+  SecureBuffer plaintext(sealed.ciphertext.size());
 
   std::size_t offset = 0;
 
   while (offset < sealed.ciphertext.size()) {
     const std::size_t chunk = std::min(sealed.ciphertext.size() - offset, k_chunk_size);
 
-    if (EVP_DecryptUpdate(context.get(), reinterpret_cast<unsigned char *>(plaintext.data()) + offset, &written,
-                          sealed.ciphertext.data() + offset, static_cast<int>(chunk)) != 1) {
+    if (EVP_DecryptUpdate(context.get(), plaintext.data() + offset, &written, sealed.ciphertext.data() + offset,
+                          static_cast<int>(chunk)) != 1) {
       return std::unexpected(CoreError::crypto_failed);
     }
 
@@ -146,12 +145,13 @@ Result<ContentBuffer> decrypt(const SealedContent &sealed, const SymmetricKey &k
 
   int final_length = 0;
 
-  if (EVP_DecryptFinal_ex(context.get(), reinterpret_cast<unsigned char *>(plaintext.data()) + offset, &final_length) !=
-      1) {
+  if (EVP_DecryptFinal_ex(context.get(), plaintext.data() + offset, &final_length) != 1) {
     return std::unexpected(CoreError::authentication_failed);
   }
 
-  plaintext.resize(offset + static_cast<std::size_t>(final_length));
+  if (offset + static_cast<std::size_t>(final_length) != plaintext.size()) {
+    return std::unexpected(CoreError::crypto_failed);
+  }
 
   return plaintext;
 }

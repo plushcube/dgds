@@ -68,7 +68,7 @@ TEST(Package, OpensValidPackage) {
   const auto opened = open_package(package, purchase_key.value());
 
   ASSERT_TRUE(opened.has_value());
-  EXPECT_EQ(opened.value(), k_plaintext);
+  EXPECT_EQ(opened->view(), k_plaintext);
 }
 
 TEST(Package, RejectsUnsupportedVersion) {
