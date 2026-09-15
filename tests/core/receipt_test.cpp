@@ -20,7 +20,7 @@ SymmetricKey make_key(std::uint8_t seed) {
   SymmetricKey key{};
 
   for (std::size_t index = 0; index < key.size(); ++index) {
-    key[index] = static_cast<std::uint8_t>(seed + index);
+    key.data()[index] = static_cast<std::uint8_t>(seed + index);
   }
 
   return key;
@@ -57,7 +57,7 @@ TEST(Receipt, OpensReceiptOfOwnDevice) {
   const auto opened = open_receipt_key(receipt, device_key);
 
   ASSERT_TRUE(opened.has_value());
-  EXPECT_EQ(opened.value(), purchase_key);
+  EXPECT_TRUE(opened->equals(purchase_key));
 }
 
 TEST(Receipt, RejectsUnsupportedVersion) {

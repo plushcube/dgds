@@ -22,7 +22,7 @@ SymmetricKey make_key(std::uint8_t seed) {
   SymmetricKey key{};
 
   for (std::size_t index = 0; index < key.size(); ++index) {
-    key[index] = static_cast<std::uint8_t>(seed + index);
+    key.data()[index] = static_cast<std::uint8_t>(seed + index);
   }
 
   return key;
@@ -35,7 +35,7 @@ TEST(Keys, GeneratesDifferentKeys) {
   ASSERT_TRUE(first.has_value());
   ASSERT_TRUE(second.has_value());
 
-  EXPECT_NE(first.value(), second.value());
+  EXPECT_FALSE(first->equals(second.value()));
 }
 
 TEST(Keys, UnwrapsWrappedKey) {
@@ -48,7 +48,7 @@ TEST(Keys, UnwrapsWrappedKey) {
   const auto unwrapped = unwrap_key(wrapped.value(), purchase_key, k_first_purchase);
 
   ASSERT_TRUE(unwrapped.has_value());
-  EXPECT_EQ(unwrapped.value(), key);
+  EXPECT_TRUE(unwrapped->equals(key));
 }
 
 TEST(Keys, GivesDifferentWrapsForSameKey) {

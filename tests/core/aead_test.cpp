@@ -18,7 +18,7 @@ SymmetricKey make_key(std::uint8_t seed) {
   SymmetricKey key{};
 
   for (std::size_t index = 0; index < key.size(); ++index) {
-    key[index] = static_cast<std::uint8_t>(seed + index);
+    key.data()[index] = static_cast<std::uint8_t>(seed + index);
   }
 
   return key;

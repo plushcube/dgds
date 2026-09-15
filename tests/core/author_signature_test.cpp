@@ -36,7 +36,7 @@ TEST(AuthorSignature, GeneratesDifferentKeys) {
   ASSERT_TRUE(second.has_value());
 
   EXPECT_NE(first->public_key, second->public_key);
-  EXPECT_NE(first->private_key, second->private_key);
+  EXPECT_FALSE(first->private_key.equals(second->private_key));
 }
 
 TEST(AuthorSignature, VerifiesSignatureOfOwnKey) {
