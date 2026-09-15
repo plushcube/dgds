@@ -1,5 +1,6 @@
 add_library(dgds-core STATIC "src/crypto/aead.cpp"
                              "src/envelope/keys.cpp"
+                             "src/envelope/package.cpp"
                              "src/envelope/receipt.cpp"
                              "src/identity/canonical_form.cpp"
                              "src/identity/content_identity.cpp"
