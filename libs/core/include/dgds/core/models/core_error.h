@@ -9,6 +9,7 @@ enum class CoreError {
   crypto_failed,
   authentication_failed,
   key_size_mismatch,
+  receipt_version_unsupported,
   mark_malformed,
   mark_version_unsupported,
   mark_checksum_mismatch,
