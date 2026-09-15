@@ -2,6 +2,7 @@ add_library(dgds-core STATIC "src/crypto/aead.cpp"
                              "src/envelope/keys.cpp"
                              "src/identity/canonical_form.cpp"
                              "src/identity/content_identity.cpp"
+                             "src/signature/author_signature.cpp"
                              "src/watermark/mark_codec.cpp")
 add_library(dgds::core ALIAS dgds-core)
 
