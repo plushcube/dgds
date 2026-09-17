@@ -1,6 +1,6 @@
 #include <dgds/core/envelope/receipt.h>
 
-#include <dgds/core/envelope/keys.h>
+#include <dgds/core/envelope/device_wrap.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -38,17 +38,17 @@ ContentBuffer receipt_associated_data(const ReceiptHeader &header) {
   return data;
 }
 
-Result<SealedContent> wrap_receipt_key(const SymmetricKey &purchase_key, const SymmetricKey &device_key,
-                                       const ReceiptHeader &header) {
-  return wrap_key(purchase_key, device_key, receipt_associated_data(header));
+Result<DeviceEnvelope> wrap_receipt_key(const SymmetricKey &purchase_key, const DevicePublicKey &device_key,
+                                        const ReceiptHeader &header) {
+  return seal_for_device(purchase_key, device_key, receipt_associated_data(header));
 }
 
-Result<SymmetricKey> open_receipt_key(const Receipt &receipt, const SymmetricKey &device_key) {
+Result<SymmetricKey> open_receipt_key(const Receipt &receipt, const DevicePrivateKey &device_key) {
   if (receipt.header.version != k_receipt_version) {
     return std::unexpected(CoreError::receipt_version_unsupported);
   }
 
-  return unwrap_key(receipt.wrapped_key, device_key, receipt_associated_data(receipt.header));
+  return open_for_device(receipt.wrapped_key, device_key, receipt_associated_data(receipt.header));
 }
 
 } // namespace dgds::core

@@ -1,7 +1,7 @@
 #pragma once
 
+#include <dgds/core/models/device_envelope.h>
 #include <dgds/core/models/purchase_id.h>
-#include <dgds/core/models/sealed_content.h>
 #include <dgds/core/models/timestamp.h>
 #include <dgds/core/models/user_id.h>
 
@@ -23,7 +23,7 @@ struct ReceiptHeader {
 
 struct Receipt {
   ReceiptHeader header;
-  SealedContent wrapped_key;
+  DeviceEnvelope wrapped_key;
 };
 
 } // namespace dgds::core
