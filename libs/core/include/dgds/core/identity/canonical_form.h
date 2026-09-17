@@ -1,11 +1,11 @@
 #pragma once
 
+#include <dgds/core/models/content.h>
+
 #include <string>
-#include <string_view>
 
 namespace dgds::core {
 
-using Content = std::string_view;
 using CanonicalForm = std::string;
 
 [[nodiscard]] CanonicalForm canonical_form(Content content);

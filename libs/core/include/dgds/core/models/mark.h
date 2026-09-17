@@ -1,12 +1,13 @@
 #pragma once
 
+#include <dgds/core/models/mark.h>
+#include <dgds/core/models/purchase_id.h>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
 
 namespace dgds::core {
-
-using PurchaseId = std::uint64_t;
 
 inline constexpr std::uint8_t k_mark_version = 1;
 inline constexpr std::size_t k_mark_bit_count = 88;
