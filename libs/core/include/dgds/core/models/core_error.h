@@ -10,6 +10,7 @@ enum class CoreError {
   authentication_failed,
   key_size_mismatch,
   receipt_version_unsupported,
+  receipt_malformed,
   package_version_unsupported,
   content_mismatch,
   signature_invalid,
