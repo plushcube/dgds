@@ -5,6 +5,7 @@
 #include <dgds/core/models/content_identity.h>
 #include <dgds/core/models/sealed_content.h>
 #include <dgds/core/models/signature.h>
+#include <dgds/core/models/signature_algorithm.h>
 
 #include <cstdint>
 
@@ -19,6 +20,7 @@ struct Package {
   ContentIdentity identity;
   AuthorPublicKey author_key;
   ContentBuffer author_name;
+  SignatureAlgorithm signature_algorithm;
   Signature signature;
 };
 

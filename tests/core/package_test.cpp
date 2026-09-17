@@ -46,6 +46,7 @@ Package assemble(Content plaintext, const ContentIdentity &claimed, const Symmet
   package.identity = claimed;
   package.author_key = author.public_key;
   package.author_name = ContentBuffer(k_author);
+  package.signature_algorithm = dgds::core::k_signature_algorithm;
   package.signature = sign_author(claimed, k_author, author.private_key).value();
 
   return package;
@@ -129,6 +130,26 @@ TEST(Package, RejectsMismatchedIdentity) {
 
   ASSERT_FALSE(opened.has_value());
   EXPECT_EQ(opened.error(), CoreError::content_mismatch);
+}
+
+TEST(Package, RejectsUnsupportedSignatureAlgorithm) {
+  const auto file_key = generate_key();
+  const auto purchase_key = generate_key();
+  const auto author = generate_author_key();
+  const auto identity = dgds::core::content_identity(k_plaintext);
+
+  ASSERT_TRUE(file_key.has_value());
+  ASSERT_TRUE(purchase_key.has_value());
+  ASSERT_TRUE(author.has_value());
+  ASSERT_TRUE(identity.has_value());
+
+  Package package = assemble(k_plaintext, identity.value(), file_key.value(), purchase_key.value(), author.value());
+  package.signature_algorithm = static_cast<dgds::core::SignatureAlgorithm>(0x7F);
+
+  const auto opened = open_package(package, purchase_key.value());
+
+  ASSERT_FALSE(opened.has_value());
+  EXPECT_EQ(opened.error(), CoreError::algorithm_unsupported);
 }
 
 TEST(Package, RejectsForeignSignature) {

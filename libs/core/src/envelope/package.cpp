@@ -23,6 +23,10 @@ Result<SecureBuffer> open_package(const Package &package, const SymmetricKey &pu
     return std::unexpected(CoreError::package_version_unsupported);
   }
 
+  if (package.signature_algorithm != k_signature_algorithm) {
+    return std::unexpected(CoreError::algorithm_unsupported);
+  }
+
   const Content bound_identity = as_content(package.identity);
 
   const auto blob_key = unwrap_key(package.wrapped_blob_key, purchase_key, bound_identity);
