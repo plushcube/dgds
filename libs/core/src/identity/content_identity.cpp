@@ -7,6 +7,10 @@
 
 namespace dgds::core {
 
+Content as_content(const ContentIdentity &identity) {
+  return Content(reinterpret_cast<const char *>(identity.data()), identity.size());
+}
+
 Result<ContentIdentity> content_identity(Content content) {
   const CanonicalForm canonical = canonical_form(content);
 
