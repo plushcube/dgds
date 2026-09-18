@@ -1,5 +1,7 @@
 #pragma once
 
+#include <expected>
+
 namespace dgds::core {
 
 enum class CoreError {
@@ -19,5 +21,7 @@ enum class CoreError {
   mark_version_unsupported,
   mark_checksum_mismatch,
 };
+
+template <typename Value> using Result = std::expected<Value, CoreError>;
 
 } // namespace dgds::core

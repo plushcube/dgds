@@ -1,6 +1,6 @@
 #include <dgds/core/signature/author_signature.h>
 
-#include <dgds/core/models/signature_algorithm.h>
+#include <dgds/core/models/author.h>
 
 #include <openssl/evp.h>
 

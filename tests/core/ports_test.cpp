@@ -1,7 +1,6 @@
-#include <dgds/core/models/device_key.h>
-#include <dgds/core/models/result.h>
-#include <dgds/core/models/secret_bytes.h>
-#include <dgds/core/models/symmetric_key.h>
+#include <dgds/core/models/crypto.h>
+#include <dgds/core/models/device.h>
+#include <dgds/core/models/errors.h>
 #include <dgds/core/ports/blob_store.h>
 #include <dgds/core/ports/identity_registry.h>
 #include <dgds/core/ports/key_store.h>

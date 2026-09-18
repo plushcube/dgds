@@ -1,15 +1,12 @@
 #pragma once
 
 #include <dgds/core/models/content.h>
-#include <dgds/core/models/device_key.h>
-#include <dgds/core/models/publication_id.h>
-#include <dgds/core/models/publication_record.h>
-#include <dgds/core/models/purchase_id.h>
-#include <dgds/core/models/purchase_record.h>
-#include <dgds/core/models/receipt_record.h>
-#include <dgds/core/models/result.h>
-#include <dgds/core/models/user_account.h>
-#include <dgds/core/models/user_id.h>
+#include <dgds/core/models/device.h>
+#include <dgds/core/models/envelope.h>
+#include <dgds/core/models/errors.h>
+#include <dgds/core/models/publication.h>
+#include <dgds/core/models/purchase.h>
+#include <dgds/core/models/user.h>
 
 #include <cstddef>
 #include <vector>

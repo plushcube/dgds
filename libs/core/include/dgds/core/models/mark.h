@@ -1,7 +1,6 @@
 #pragma once
 
-#include <dgds/core/models/mark.h>
-#include <dgds/core/models/purchase_id.h>
+#include <dgds/core/models/purchase.h>
 
 #include <array>
 #include <cstddef>

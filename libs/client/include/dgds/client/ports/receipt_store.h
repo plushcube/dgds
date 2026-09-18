@@ -1,8 +1,8 @@
 #pragma once
 
 #include <dgds/core/models/content.h>
-#include <dgds/core/models/purchase_id.h>
-#include <dgds/core/models/result.h>
+#include <dgds/core/models/errors.h>
+#include <dgds/core/models/purchase.h>
 
 namespace dgds::client {
 

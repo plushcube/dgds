@@ -5,8 +5,17 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace dgds::core {
+
+inline constexpr std::size_t k_key_size = 32;
+inline constexpr std::size_t k_nonce_size = 12;
+inline constexpr std::size_t k_tag_size = 16;
+
+enum class AeadAlgorithm : std::uint8_t {
+  aes_256_gcm = 1,
+};
 
 template <std::size_t Size> class SecretBytes {
 public:
@@ -39,6 +48,18 @@ public:
 
 private:
   std::array<std::uint8_t, Size> m_bytes{};
+};
+
+using SymmetricKey = SecretBytes<k_key_size>;
+using Nonce = std::array<std::uint8_t, k_nonce_size>;
+using Tag = std::array<std::uint8_t, k_tag_size>;
+using Ciphertext = std::vector<std::uint8_t>;
+
+struct SealedContent {
+  AeadAlgorithm algorithm;
+  Nonce nonce;
+  Ciphertext ciphertext;
+  Tag tag;
 };
 
 } // namespace dgds::core

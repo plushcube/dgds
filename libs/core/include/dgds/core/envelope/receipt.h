@@ -1,11 +1,10 @@
 #pragma once
 
 #include <dgds/core/models/content.h>
-#include <dgds/core/models/device_envelope.h>
-#include <dgds/core/models/device_key.h>
-#include <dgds/core/models/receipt.h>
-#include <dgds/core/models/result.h>
-#include <dgds/core/models/symmetric_key.h>
+#include <dgds/core/models/crypto.h>
+#include <dgds/core/models/device.h>
+#include <dgds/core/models/envelope.h>
+#include <dgds/core/models/errors.h>
 
 namespace dgds::core {
 

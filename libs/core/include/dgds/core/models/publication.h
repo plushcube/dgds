@@ -1,17 +1,17 @@
 #pragma once
 
-#include <dgds/core/models/author_key.h>
+#include <dgds/core/models/author.h>
 #include <dgds/core/models/content.h>
-#include <dgds/core/models/content_identity.h>
-#include <dgds/core/models/publication_id.h>
-#include <dgds/core/models/signature.h>
-#include <dgds/core/models/signature_algorithm.h>
+#include <dgds/core/models/identity.h>
 #include <dgds/core/models/timestamp.h>
-#include <dgds/core/models/user_id.h>
+#include <dgds/core/models/user.h>
 
 #include <cstddef>
+#include <cstdint>
 
 namespace dgds::core {
+
+using PublicationId = std::uint64_t;
 
 struct PublicationRecord {
   PublicationId publication_id;
@@ -25,6 +25,15 @@ struct PublicationRecord {
   AuthorPublicKey author_key;
   SignatureAlgorithm signature_algorithm;
   Signature signature;
+};
+
+struct PublicationSummary {
+  PublicationId publication_id;
+  ContentBuffer title;
+  ContentBuffer file_name;
+  std::size_t size;
+  Timestamp published_at;
+  ContentBuffer author_name;
 };
 
 } // namespace dgds::core

@@ -1,4 +1,4 @@
-#include <dgds/core/models/secret_bytes.h>
+#include <dgds/core/models/crypto.h>
 
 #include <gtest/gtest.h>
 

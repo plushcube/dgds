@@ -2,8 +2,8 @@
 
 #include <dgds/core/identity/canonical_form.h>
 #include <dgds/core/models/content.h>
-#include <dgds/core/models/content_identity.h>
-#include <dgds/core/models/result.h>
+#include <dgds/core/models/errors.h>
+#include <dgds/core/models/identity.h>
 
 #include <string>
 

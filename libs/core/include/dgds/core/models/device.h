@@ -1,6 +1,6 @@
 #pragma once
 
-#include <dgds/core/models/secret_bytes.h>
+#include <dgds/core/models/crypto.h>
 
 #include <array>
 #include <cstddef>
@@ -16,6 +16,11 @@ using DevicePrivateKey = SecretBytes<k_device_key_size>;
 struct DeviceKeyPair {
   DevicePublicKey public_key;
   DevicePrivateKey private_key;
+};
+
+struct DeviceEnvelope {
+  DevicePublicKey ephemeral_key;
+  SealedContent wrapped;
 };
 
 } // namespace dgds::core

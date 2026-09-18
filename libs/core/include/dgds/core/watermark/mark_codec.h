@@ -1,7 +1,7 @@
 #pragma once
 
+#include <dgds/core/models/errors.h>
 #include <dgds/core/models/mark.h>
-#include <dgds/core/models/result.h>
 
 namespace dgds::core {
 
