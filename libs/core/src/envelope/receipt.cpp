@@ -3,7 +3,7 @@
 #include <dgds/core/crypto/sealed_content_codec.h>
 #include <dgds/core/envelope/device_wrap.h>
 
-#include <codec/binary.h>
+#include <dgds/core/codec/binary.h>
 
 #include <cstddef>
 #include <cstdint>

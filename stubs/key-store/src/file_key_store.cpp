@@ -34,13 +34,13 @@ core::Result<core::SymmetricKey> FileKeyStore::create_master_key() const {
   }
 
   if (!present) {
-    const auto empty = directory_is_empty(m_root);
+    const auto existing = list_files(m_root);
 
-    if (!empty.has_value()) {
-      return std::unexpected(empty.error());
+    if (!existing.has_value()) {
+      return std::unexpected(existing.error());
     }
 
-    if (!empty.value()) {
+    if (!existing->empty()) {
       return std::unexpected(core::CoreError::key_not_found);
     }
   }

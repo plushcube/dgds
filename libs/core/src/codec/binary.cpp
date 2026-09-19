@@ -1,4 +1,4 @@
-#include <codec/binary.h>
+#include <dgds/core/codec/binary.h>
 
 #include <cstddef>
 #include <cstdint>

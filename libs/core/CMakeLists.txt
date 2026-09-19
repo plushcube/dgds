@@ -14,7 +14,6 @@ add_library(dgds::core ALIAS dgds-core)
 
 target_include_directories(
   dgds-core PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
-target_include_directories(dgds-core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(dgds-core PUBLIC OpenSSL::Crypto)
 target_link_libraries(dgds-core PRIVATE dgds::warnings)
 

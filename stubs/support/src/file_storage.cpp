@@ -10,8 +10,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <fcntl.h>
+#include <string_view>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <vector>
 
 namespace dgds::stubs {
 namespace {
@@ -19,6 +21,7 @@ namespace {
 constexpr mode_t k_owner_only_file = 0600;
 constexpr std::size_t k_secret_size = core::k_key_size;
 constexpr const char *k_pending_suffix = ".pending";
+constexpr std::string_view k_pending_extension = ".pending";
 
 enum class SecretCreation {
   created,
@@ -86,7 +89,7 @@ core::Result<void> ensure_directory(const std::filesystem::path &path) {
   return {};
 }
 
-core::Result<bool> directory_is_empty(const std::filesystem::path &path) {
+core::Result<bool> file_exists(const std::filesystem::path &path) {
   std::error_code status;
   const bool present = std::filesystem::exists(path, status);
 
@@ -95,16 +98,53 @@ core::Result<bool> directory_is_empty(const std::filesystem::path &path) {
   }
 
   if (!present) {
-    return true;
+    return false;
   }
 
-  const std::filesystem::directory_iterator entries(path, status);
+  const bool regular = std::filesystem::is_regular_file(path, status);
 
   if (status) {
     return std::unexpected(core::CoreError::storage_failed);
   }
 
-  return entries == std::filesystem::directory_iterator();
+  return regular;
+}
+
+core::Result<std::vector<std::filesystem::path>> list_files(const std::filesystem::path &directory) {
+  std::vector<std::filesystem::path> files;
+
+  std::error_code status;
+  const bool present = std::filesystem::exists(directory, status);
+
+  if (status) {
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
+  if (!present) {
+    return files;
+  }
+
+  const std::filesystem::directory_iterator entries(directory, status);
+
+  if (status) {
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
+  for (const auto &entry : entries) {
+    const bool regular = entry.is_regular_file(status);
+
+    if (status) {
+      return std::unexpected(core::CoreError::storage_failed);
+    }
+
+    if (regular && entry.path().extension() != k_pending_extension) {
+      files.push_back(entry.path());
+    }
+  }
+
+  std::sort(files.begin(), files.end());
+
+  return files;
 }
 
 core::Result<core::ContentBuffer> load_file(const std::filesystem::path &path, core::CoreError missing) {
