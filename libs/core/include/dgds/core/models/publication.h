@@ -36,4 +36,10 @@ struct PublicationSummary {
   ContentBuffer author_name;
 };
 
+struct PublicationDraft {
+  ContentBuffer title;
+  ContentBuffer file_name;
+  ContentBuffer content;
+};
+
 } // namespace dgds::core
