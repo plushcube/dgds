@@ -10,7 +10,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <fcntl.h>
-#include <string_view>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
@@ -21,7 +20,6 @@ namespace {
 constexpr mode_t k_owner_only_file = 0600;
 constexpr std::size_t k_secret_size = core::k_key_size;
 constexpr const char *k_pending_suffix = ".pending";
-constexpr std::string_view k_pending_extension = ".pending";
 
 enum class SecretCreation {
   created,
@@ -137,7 +135,7 @@ core::Result<std::vector<std::filesystem::path>> list_files(const std::filesyste
       return std::unexpected(core::CoreError::storage_failed);
     }
 
-    if (regular && entry.path().extension() != k_pending_extension) {
+    if (regular && entry.path().extension() != k_pending_suffix) {
       files.push_back(entry.path());
     }
   }

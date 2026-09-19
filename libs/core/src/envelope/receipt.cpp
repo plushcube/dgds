@@ -10,6 +10,7 @@
 #include <expected>
 
 namespace dgds::core {
+namespace {
 
 ContentBuffer receipt_associated_data(const ReceiptHeader &header) {
   ContentBuffer data;
@@ -23,6 +24,8 @@ ContentBuffer receipt_associated_data(const ReceiptHeader &header) {
 
   return data;
 }
+
+} // namespace
 
 Result<DeviceEnvelope> wrap_receipt_key(const SymmetricKey &purchase_key, const DevicePublicKey &device_key,
                                         const ReceiptHeader &header) {

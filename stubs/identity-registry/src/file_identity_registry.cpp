@@ -13,7 +13,7 @@ namespace {
 constexpr const char k_claim_suffix[] = ".claimed";
 
 core::Result<core::ClaimOutcome> claim_file(const std::filesystem::path &path) {
-  const int descriptor = ::open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0644);
+  const int descriptor = ::open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0600);
 
   if (descriptor >= 0) {
     ::close(descriptor);

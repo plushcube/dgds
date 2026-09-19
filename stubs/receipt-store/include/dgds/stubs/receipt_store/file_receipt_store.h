@@ -1,6 +1,7 @@
 #pragma once
 
 #include <dgds/client/ports/receipt_store.h>
+#include <dgds/stubs/support/file_storage.h>
 
 #include <filesystem>
 #include <string>
@@ -12,8 +13,13 @@ class FileReceiptStore : public client::ReceiptStore {
 public:
   explicit FileReceiptStore(std::filesystem::path root) : m_root(std::move(root)) {}
 
-  [[nodiscard]] client::Result<void> save(const client::PurchaseId &purchase_id, client::Content blob) override;
-  [[nodiscard]] client::Result<client::ContentBuffer> load(const client::PurchaseId &purchase_id) override;
+  [[nodiscard]] client::Result<void> save(const client::PurchaseId &purchase_id, client::Content blob) override {
+    return store_file(path_of(purchase_id), blob);
+  }
+
+  [[nodiscard]] client::Result<client::ContentBuffer> load(const client::PurchaseId &purchase_id) override {
+    return load_file(path_of(purchase_id), core::CoreError::receipt_not_found);
+  }
 
 private:
   [[nodiscard]] std::filesystem::path path_of(const client::PurchaseId &purchase_id) const {

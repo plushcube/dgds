@@ -8,7 +8,6 @@
 
 namespace dgds::core {
 
-[[nodiscard]] ContentBuffer receipt_associated_data(const ReceiptHeader &header);
 [[nodiscard]] Result<DeviceEnvelope> wrap_receipt_key(const SymmetricKey &purchase_key,
                                                       const DevicePublicKey &device_key, const ReceiptHeader &header);
 [[nodiscard]] Result<SymmetricKey> open_receipt_key(const Receipt &receipt, const DevicePrivateKey &device_key);

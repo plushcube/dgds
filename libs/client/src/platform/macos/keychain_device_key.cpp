@@ -19,21 +19,21 @@ constexpr std::size_t k_secret_size = core::k_device_key_size;
 
 template <typename Reference> class CfHandle {
 public:
-  explicit CfHandle(Reference reference = nullptr) : m_reference(reference) {}
+  explicit CfHandle(Reference reference = nullptr) : p_reference(reference) {}
   CfHandle(const CfHandle &) = delete;
   CfHandle &operator=(const CfHandle &) = delete;
   CfHandle(CfHandle &&) = delete;
   CfHandle &operator=(CfHandle &&) = delete;
   ~CfHandle() {
-    if (m_reference != nullptr) {
-      CFRelease(m_reference);
+    if (p_reference != nullptr) {
+      CFRelease(p_reference);
     }
   }
 
-  [[nodiscard]] Reference get() const { return m_reference; }
+  [[nodiscard]] Reference get() const { return p_reference; }
 
 private:
-  Reference m_reference;
+  Reference p_reference;
 };
 
 CfHandle<CFStringRef> make_string(std::string_view text) {

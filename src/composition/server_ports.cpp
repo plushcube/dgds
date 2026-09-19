@@ -19,11 +19,12 @@ constexpr const char *k_identities_directory = "identities";
 
 ServerPorts make_server_ports(const Configuration &configuration) {
   return ServerPorts{
-      .blobs = std::make_unique<stubs::FileBlobStore>(configuration.storage_root / k_blobs_directory),
-      .keys = std::make_unique<stubs::FileKeyStore>(configuration.master_key,
-                                                    configuration.storage_root / k_keys_directory),
-      .metadata = std::make_unique<stubs::FileMetadataRegistry>(configuration.storage_root / k_metadata_directory),
-      .identities = std::make_unique<stubs::FileIdentityRegistry>(configuration.storage_root / k_identities_directory),
+      .p_blobs = std::make_unique<stubs::FileBlobStore>(configuration.storage_root / k_blobs_directory),
+      .p_keys = std::make_unique<stubs::FileKeyStore>(configuration.master_key,
+                                                      configuration.storage_root / k_keys_directory),
+      .p_metadata = std::make_unique<stubs::FileMetadataRegistry>(configuration.storage_root / k_metadata_directory),
+      .p_identities =
+          std::make_unique<stubs::FileIdentityRegistry>(configuration.storage_root / k_identities_directory),
   };
 }
 

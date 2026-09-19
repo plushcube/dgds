@@ -5,5 +5,5 @@ target_include_directories(
   dgds-stub-receipt-store
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 target_link_libraries(dgds-stub-receipt-store
-                      PUBLIC dgds::client
-                      PRIVATE dgds::stub::support dgds::warnings)
+                      PUBLIC dgds::client dgds::stub::support
+                      PRIVATE dgds::warnings)

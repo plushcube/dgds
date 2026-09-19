@@ -3,7 +3,6 @@ add_library(dgds::server ALIAS dgds-server)
 
 target_include_directories(
   dgds-server INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
-target_link_libraries(dgds-server INTERFACE dgds::core httplib::httplib
-                                             nlohmann_json::nlohmann_json)
+target_link_libraries(dgds-server INTERFACE dgds::core)
 
 dgds_apply_version(dgds-server server 0.1.0)
