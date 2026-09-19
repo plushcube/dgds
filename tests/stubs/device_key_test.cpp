@@ -147,12 +147,28 @@ TEST_F(DeviceKeyTest, RejectsTruncatedKeyFile) {
 }
 
 TEST_F(DeviceKeyTest, ReportsStorageFailure) {
-  FileDeviceKey device(m_root / "missing" / "device.key");
+  std::ofstream blocker(key_path(), std::ios::binary);
+  blocker << "не каталог";
+  blocker.close();
+
+  FileDeviceKey device(key_path() / "device.key");
 
   const auto public_key = device.public_key();
 
   ASSERT_FALSE(public_key.has_value());
   EXPECT_EQ(public_key.error(), CoreError::storage_failed);
+}
+
+TEST_F(DeviceKeyTest, CreatesDirectoryForKey) {
+  FileDeviceKey device(m_root / "nested" / "device.key");
+
+  const auto public_key = device.public_key();
+  ASSERT_TRUE(public_key.has_value());
+
+  constexpr std::filesystem::perms k_shared = std::filesystem::perms::group_all | std::filesystem::perms::others_all;
+  const auto permissions = std::filesystem::status(m_root / "nested").permissions();
+
+  EXPECT_EQ(permissions & k_shared, std::filesystem::perms::none);
 }
 
 } // namespace

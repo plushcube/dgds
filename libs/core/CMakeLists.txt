@@ -1,4 +1,6 @@
-add_library(dgds-core STATIC "src/crypto/aead.cpp"
+add_library(dgds-core STATIC "src/codec/binary.cpp"
+                             "src/crypto/aead.cpp"
+                             "src/crypto/sealed_content_codec.cpp"
                              "src/crypto/secure_buffer.cpp"
                              "src/envelope/device_wrap.cpp"
                              "src/envelope/keys.cpp"
@@ -12,6 +14,7 @@ add_library(dgds::core ALIAS dgds-core)
 
 target_include_directories(
   dgds-core PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+target_include_directories(dgds-core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(dgds-core PUBLIC OpenSSL::Crypto)
 target_link_libraries(dgds-core PRIVATE dgds::warnings)
 
