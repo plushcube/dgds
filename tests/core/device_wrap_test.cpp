@@ -6,6 +6,7 @@
 
 namespace {
 
+using dgds::core::AeadAlgorithm;
 using dgds::core::CoreError;
 using dgds::core::derive_device_public_key;
 using dgds::core::generate_device_key;
@@ -55,6 +56,23 @@ TEST(DeviceWrap, RejectsForeignDevice) {
 
   ASSERT_FALSE(opened.has_value());
   EXPECT_EQ(opened.error(), CoreError::authentication_failed);
+}
+
+TEST(DeviceWrap, RejectsUnsupportedAlgorithm) {
+  const auto key = generate_key();
+  const auto device = generate_device_key();
+  ASSERT_TRUE(key.has_value());
+  ASSERT_TRUE(device.has_value());
+
+  auto envelope = seal_for_device(key.value(), device->public_key, k_associated_data);
+  ASSERT_TRUE(envelope.has_value());
+
+  envelope->wrapped.algorithm = static_cast<AeadAlgorithm>(0x7F);
+
+  const auto opened = open_for_device(envelope.value(), device->private_key, k_associated_data);
+
+  ASSERT_FALSE(opened.has_value());
+  EXPECT_EQ(opened.error(), CoreError::algorithm_unsupported);
 }
 
 TEST(DeviceWrap, UsesFreshEphemeralKey) {
