@@ -6,6 +6,7 @@
 #include <dgds/core/models/user.h>
 
 #include <cstdint>
+#include <vector>
 
 namespace dgds::core {
 
@@ -24,5 +25,7 @@ struct PurchaseSummary {
   PublicationSummary publication;
   Timestamp purchased_at;
 };
+
+using PurchaseSummaries = std::vector<PurchaseSummary>;
 
 } // namespace dgds::core

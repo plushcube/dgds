@@ -9,8 +9,6 @@
 #include <dgds/core/models/purchase.h>
 #include <dgds/core/models/user.h>
 
-#include <vector>
-
 namespace dgds::client {
 
 using core::AuthorPublicKey;
@@ -20,16 +18,15 @@ using core::DevicePublicKey;
 using core::Package;
 using core::PublicationDraft;
 using core::PublicationId;
+using core::PublicationSummaries;
 using core::PublicationSummary;
 using core::PurchaseId;
+using core::PurchaseSummaries;
 using core::PurchaseSummary;
 using core::Receipt;
 using core::Result;
 using core::Signature;
 using core::UserAccount;
-
-using PublicationSummaries = std::vector<PublicationSummary>;
-using PurchaseSummaries = std::vector<PurchaseSummary>;
 
 class ApiTransport {
 public:

@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace dgds::core {
 
@@ -41,5 +42,13 @@ struct PublicationDraft {
   ContentBuffer file_name;
   ContentBuffer content;
 };
+
+struct AuthorPublicationSummary {
+  PublicationSummary publication;
+  std::size_t purchases;
+};
+
+using PublicationSummaries = std::vector<PublicationSummary>;
+using AuthorPublicationSummaries = std::vector<AuthorPublicationSummary>;
 
 } // namespace dgds::core
