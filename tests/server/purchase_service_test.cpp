@@ -107,7 +107,7 @@ protected:
   UserService m_users{m_metadata, m_sessions};
   PublicationService m_publications{m_identities, m_keys, m_blobs, m_metadata};
   PurchaseService m_purchases{m_keys, m_metadata};
-  DeliveryService m_delivery{m_blobs, m_metadata};
+  DeliveryService m_delivery{m_blobs, m_keys, m_metadata};
 
 private:
   dgds::server::SessionStore m_sessions;

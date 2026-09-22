@@ -7,8 +7,11 @@
 #include <dgds/core/envelope/device_wrap.h>
 #include <dgds/core/envelope/package.h>
 #include <dgds/core/envelope/receipt.h>
+#include <dgds/core/identity/canonical_form.h>
 #include <dgds/core/identity/content_identity.h>
+#include <dgds/core/models/mark.h>
 #include <dgds/core/signature/author_signature.h>
+#include <dgds/core/watermark/mark_channel.h>
 #include <dgds/stubs/blob_store/file_blob_store.h>
 #include <dgds/stubs/identity_registry/file_identity_registry.h>
 #include <dgds/stubs/key_store/file_key_store.h>
@@ -27,13 +30,16 @@
 namespace {
 
 using dgds::core::AuthorPrivateKey;
+using dgds::core::canonical_form;
 using dgds::core::Content;
 using dgds::core::CoreError;
+using dgds::core::DeviceKeyPair;
 using dgds::core::k_package_version;
 using dgds::core::open_package;
 using dgds::core::open_receipt_key;
 using dgds::core::PublicationDraft;
 using dgds::core::PublicationRecord;
+using dgds::core::read_mark;
 using dgds::core::Receipt;
 using dgds::core::Result;
 using dgds::core::sign_author;
@@ -49,6 +55,7 @@ using dgds::stubs::FileKeyStore;
 using dgds::stubs::FileMetadataRegistry;
 
 constexpr std::string_view k_text = "текст публикации";
+constexpr std::string_view k_short_text = "короткий текст";
 constexpr std::string_view k_title = "название";
 constexpr std::int64_t k_purchased_at = 1700000500;
 
@@ -60,6 +67,16 @@ Result<Signature> sign_content(Content text, Content author_name, const AuthorPr
   }
 
   return sign_author(identity.value(), author_name, key);
+}
+
+std::string markable_text() {
+  std::string text;
+
+  for (std::size_t line = 0; line < 5; ++line) {
+    text += "line " + std::to_string(line) + " of the published text\n";
+  }
+
+  return text;
 }
 
 class DeliveryServiceTest : public ::testing::Test {
@@ -104,7 +121,7 @@ protected:
   UserService m_users{m_metadata, m_sessions};
   PublicationService m_publications{m_identities, m_keys, m_blobs, m_metadata};
   PurchaseService m_purchases{m_keys, m_metadata};
-  DeliveryService m_delivery{m_blobs, m_metadata};
+  DeliveryService m_delivery{m_blobs, m_keys, m_metadata};
 
 private:
   dgds::server::SessionStore m_sessions;
@@ -200,6 +217,107 @@ TEST_F(DeliveryServiceTest, RejectsPurchaseOfMissingPublication) {
 
   ASSERT_FALSE(package.has_value());
   EXPECT_EQ(package.error(), CoreError::publication_not_found);
+}
+
+TEST_F(DeliveryServiceTest, MarksDeliveredContentPerPurchase) {
+  const UserAccount author = register_user("автор");
+  const UserAccount first = register_user("первый");
+  const UserAccount second = register_user("второй");
+  const std::string text = markable_text();
+  const auto publication = publish(author, text);
+
+  const auto first_device = dgds::core::generate_device_key();
+  const auto second_device = dgds::core::generate_device_key();
+  ASSERT_TRUE(first_device.has_value());
+  ASSERT_TRUE(second_device.has_value());
+
+  const auto first_receipt =
+      m_purchases.buy(first.user_id, publication.publication_id, first_device->public_key, k_purchased_at);
+  const auto second_receipt =
+      m_purchases.buy(second.user_id, publication.publication_id, second_device->public_key, k_purchased_at + 10);
+  ASSERT_TRUE(first_receipt.has_value());
+  ASSERT_TRUE(second_receipt.has_value());
+
+  const auto first_package =
+      m_delivery.fetch_package(first.user_id, first_receipt->header.purchase_id, first_device->public_key);
+  const auto second_package =
+      m_delivery.fetch_package(second.user_id, second_receipt->header.purchase_id, second_device->public_key);
+  ASSERT_TRUE(first_package.has_value());
+  ASSERT_TRUE(second_package.has_value());
+
+  EXPECT_EQ(first_package->identity, second_package->identity);
+  EXPECT_EQ(first_package->signature, second_package->signature);
+  EXPECT_NE(first_package->content.ciphertext, second_package->content.ciphertext);
+
+  const auto repeated =
+      m_delivery.fetch_package(first.user_id, first_receipt->header.purchase_id, first_device->public_key);
+  ASSERT_TRUE(repeated.has_value());
+  EXPECT_NE(repeated->content.nonce, first_package->content.nonce);
+
+  const auto check_delivered = [&text](const dgds::core::Package &package, const dgds::core::Receipt &receipt,
+                                       const dgds::core::DeviceKeyPair &device) {
+    const auto receipt_key = open_receipt_key(receipt, device.private_key);
+    ASSERT_TRUE(receipt_key.has_value());
+
+    const auto content = open_package(package, receipt_key.value());
+    ASSERT_TRUE(content.has_value());
+    EXPECT_EQ(canonical_form(content->view()), text);
+
+    const auto mark = read_mark(content->view());
+    ASSERT_TRUE(mark.has_value());
+    EXPECT_EQ(mark->purchase_id, receipt.header.purchase_id);
+  };
+
+  check_delivered(first_package.value(), first_receipt.value(), first_device.value());
+  check_delivered(second_package.value(), second_receipt.value(), second_device.value());
+
+  const auto repeat_key = open_receipt_key(first_receipt.value(), first_device->private_key);
+  ASSERT_TRUE(repeat_key.has_value());
+
+  const auto repeated_once = open_package(first_package.value(), repeat_key.value());
+  const auto repeated_again = open_package(repeated.value(), repeat_key.value());
+
+  ASSERT_TRUE(repeated_once.has_value());
+  ASSERT_TRUE(repeated_again.has_value());
+  EXPECT_EQ(repeated_again->view(), repeated_once->view());
+}
+
+TEST_F(DeliveryServiceTest, SharesUnmarkedDelivery) {
+  const UserAccount author = register_user("автор");
+  const UserAccount first = register_user("первый");
+  const UserAccount second = register_user("второй");
+  const auto publication = publish(author, k_short_text);
+
+  const auto first_device = dgds::core::generate_device_key();
+  const auto second_device = dgds::core::generate_device_key();
+  ASSERT_TRUE(first_device.has_value());
+  ASSERT_TRUE(second_device.has_value());
+
+  const auto first_receipt =
+      m_purchases.buy(first.user_id, publication.publication_id, first_device->public_key, k_purchased_at);
+  const auto second_receipt =
+      m_purchases.buy(second.user_id, publication.publication_id, second_device->public_key, k_purchased_at + 10);
+  ASSERT_TRUE(first_receipt.has_value());
+  ASSERT_TRUE(second_receipt.has_value());
+
+  const auto first_package =
+      m_delivery.fetch_package(first.user_id, first_receipt->header.purchase_id, first_device->public_key);
+  const auto second_package =
+      m_delivery.fetch_package(second.user_id, second_receipt->header.purchase_id, second_device->public_key);
+  ASSERT_TRUE(first_package.has_value());
+  ASSERT_TRUE(second_package.has_value());
+
+  EXPECT_EQ(first_package->content.ciphertext, second_package->content.ciphertext);
+  EXPECT_EQ(first_package->content.nonce, second_package->content.nonce);
+
+  const auto receipt_key = open_receipt_key(first_receipt.value(), first_device->private_key);
+  ASSERT_TRUE(receipt_key.has_value());
+
+  const auto content = open_package(first_package.value(), receipt_key.value());
+
+  ASSERT_TRUE(content.has_value());
+  EXPECT_EQ(content->view(), k_short_text);
+  EXPECT_FALSE(read_mark(content->view()).has_value());
 }
 
 } // namespace

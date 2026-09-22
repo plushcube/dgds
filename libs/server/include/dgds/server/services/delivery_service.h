@@ -6,20 +6,27 @@
 #include <dgds/core/models/purchase.h>
 #include <dgds/core/models/user.h>
 #include <dgds/core/ports/blob_store.h>
+#include <dgds/core/ports/key_store.h>
 #include <dgds/core/ports/metadata_registry.h>
 
 namespace dgds::server {
 
 class DeliveryService {
 public:
-  DeliveryService(core::BlobStore &blobs, core::MetadataRegistry &metadata) : m_blobs(blobs), m_metadata(metadata) {}
+  DeliveryService(core::BlobStore &blobs, core::KeyStore &keys, core::MetadataRegistry &metadata)
+      : m_blobs(blobs), m_keys(keys), m_metadata(metadata) {}
 
   [[nodiscard]] core::Result<core::Package> fetch_package(const core::UserId &user_id,
                                                           const core::PurchaseId &purchase_id,
                                                           const core::DevicePublicKey &device_key);
 
 private:
+  [[nodiscard]] core::Result<core::SealedContent> mark_for_purchase(const core::PublicationRecord &publication,
+                                                                    const core::SealedContent &stored,
+                                                                    const core::PurchaseId &purchase_id);
+
   core::BlobStore &m_blobs;
+  core::KeyStore &m_keys;
   core::MetadataRegistry &m_metadata;
 };
 
