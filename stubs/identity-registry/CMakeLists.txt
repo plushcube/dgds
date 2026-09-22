@@ -6,4 +6,4 @@ target_include_directories(
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 target_link_libraries(dgds-stub-identity-registry
                       PUBLIC dgds::core
-                      PRIVATE dgds::warnings)
+                      PRIVATE dgds::stub::support dgds::warnings)

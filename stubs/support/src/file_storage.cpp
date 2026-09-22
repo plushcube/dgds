@@ -87,6 +87,27 @@ core::Result<void> ensure_directory(const std::filesystem::path &path) {
   return {};
 }
 
+core::Result<bool> claim_file(const std::filesystem::path &path) {
+  const auto prepared = ensure_directory(path.parent_path());
+
+  if (!prepared.has_value()) {
+    return std::unexpected(prepared.error());
+  }
+
+  const int descriptor = ::open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY, k_owner_only_file);
+
+  if (descriptor >= 0) {
+    ::close(descriptor);
+    return true;
+  }
+
+  if (errno == EEXIST) {
+    return false;
+  }
+
+  return std::unexpected(core::CoreError::storage_failed);
+}
+
 core::Result<bool> file_exists(const std::filesystem::path &path) {
   std::error_code status;
   const bool present = std::filesystem::exists(path, status);
@@ -210,6 +231,14 @@ core::Result<void> store_file(const std::filesystem::path &path, core::Content b
 
   if (status) {
     ::unlink(pending.c_str());
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
+  return {};
+}
+
+core::Result<void> remove_file(const std::filesystem::path &path) {
+  if (::unlink(path.c_str()) != 0 && errno != ENOENT) {
     return std::unexpected(core::CoreError::storage_failed);
   }
 

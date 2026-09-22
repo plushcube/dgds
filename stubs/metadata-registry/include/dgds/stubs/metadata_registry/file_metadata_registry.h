@@ -37,8 +37,11 @@ public:
 
 private:
   [[nodiscard]] std::filesystem::path users_dir() const { return m_root / k_users_directory; }
+  [[nodiscard]] std::filesystem::path names_dir() const { return m_root / k_names_directory; }
   [[nodiscard]] std::filesystem::path publications_dir() const { return m_root / k_publications_directory; }
   [[nodiscard]] std::filesystem::path purchases_dir() const { return m_root / k_purchases_directory; }
+
+  [[nodiscard]] core::Result<std::filesystem::path> name_path(core::Content name) const;
 
   [[nodiscard]] std::filesystem::path user_path(const core::UserId &user_id) const {
     return users_dir() / (core::to_hex(user_id.data(), user_id.size()) + k_user_suffix);
@@ -59,6 +62,8 @@ private:
   }
 
   static constexpr const char *k_users_directory = "users";
+  static constexpr const char *k_names_directory = "names";
+  static constexpr const char *k_name_suffix = ".name";
   static constexpr const char *k_publications_directory = "publications";
   static constexpr const char *k_purchases_directory = "purchases";
   static constexpr const char *k_receipts_directory = "receipts";

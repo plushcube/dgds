@@ -1,8 +1,11 @@
-add_library(dgds-server INTERFACE)
+add_library(dgds-server STATIC "src/services/session_store.cpp"
+                               "src/services/user_service.cpp")
 add_library(dgds::server ALIAS dgds-server)
 
 target_include_directories(
-  dgds-server INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
-target_link_libraries(dgds-server INTERFACE dgds::core)
+  dgds-server PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+target_link_libraries(dgds-server
+                      PUBLIC dgds::core
+                      PRIVATE dgds::warnings)
 
 dgds_apply_version(dgds-server server 0.1.0)

@@ -18,6 +18,7 @@ enum class CoreError {
   blob_malformed,
   user_not_found,
   user_name_taken,
+  authorization_failed,
   publication_not_found,
   purchase_not_found,
   record_exists,

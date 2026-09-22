@@ -10,9 +10,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <latch>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unistd.h>
+#include <vector>
 
 namespace {
 
@@ -332,6 +335,48 @@ TEST_F(MetadataRegistryTest, KeepsReceiptOfDevice) {
 
   ASSERT_FALSE(foreign.has_value());
   EXPECT_EQ(foreign.error(), CoreError::receipt_not_found);
+}
+
+TEST_F(MetadataRegistryTest, OnlyOneConcurrentRegistrationOfNameSucceeds) {
+  constexpr std::size_t k_thread_count = 8;
+
+  FileMetadataRegistry registry(m_root);
+
+  std::atomic<std::size_t> added{0};
+  std::atomic<std::size_t> rejected{0};
+  std::atomic<std::size_t> failed{0};
+  std::latch start(k_thread_count);
+
+  std::vector<std::thread> threads;
+  threads.reserve(k_thread_count);
+
+  for (std::size_t index = 0; index < k_thread_count; ++index) {
+    threads.emplace_back([&registry, &start, &added, &rejected, &failed, index] {
+      start.arrive_and_wait();
+
+      const auto outcome = registry.add_user(make_user(static_cast<std::uint8_t>(20 + index), "одно-имя"));
+
+      if (!outcome.has_value()) {
+        if (outcome.error() == CoreError::user_name_taken) {
+          ++rejected;
+        } else {
+          ++failed;
+        }
+
+        return;
+      }
+
+      ++added;
+    });
+  }
+
+  for (auto &thread : threads) {
+    thread.join();
+  }
+
+  EXPECT_EQ(failed.load(), 0U);
+  EXPECT_EQ(added.load(), 1U);
+  EXPECT_EQ(rejected.load(), k_thread_count - 1);
 }
 
 } // namespace
