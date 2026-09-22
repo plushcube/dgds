@@ -225,4 +225,69 @@ TEST_F(PurchaseServiceTest, RequiresReceiptForRequestingDevice) {
   EXPECT_EQ(count.value(), 1U);
 }
 
+TEST_F(PurchaseServiceTest, ListsPurchasedWithPublicationMetadata) {
+  const UserAccount author = register_user("автор");
+  const UserAccount buyer = register_user("покупатель");
+  const auto publication = publish(author, k_text);
+
+  const auto device = dgds::core::generate_device_key();
+  ASSERT_TRUE(device.has_value());
+
+  const auto receipt = m_purchases.buy(buyer.user_id, publication.publication_id, device->public_key, k_purchased_at);
+  ASSERT_TRUE(receipt.has_value());
+
+  const auto purchased = m_purchases.purchases_of(buyer.user_id);
+
+  ASSERT_TRUE(purchased.has_value());
+  ASSERT_EQ(purchased->size(), 1U);
+  EXPECT_EQ((*purchased)[0].purchase_id, receipt->header.purchase_id);
+  EXPECT_EQ((*purchased)[0].purchased_at, k_purchased_at);
+  EXPECT_EQ((*purchased)[0].publication.publication_id, publication.publication_id);
+  EXPECT_EQ((*purchased)[0].publication.title, k_title);
+  EXPECT_EQ((*purchased)[0].publication.file_name, "файл.txt");
+  EXPECT_EQ((*purchased)[0].publication.size, k_text.size());
+  EXPECT_EQ((*purchased)[0].publication.published_at, 1700000000);
+  EXPECT_EQ((*purchased)[0].publication.author_name, author.name);
+}
+
+TEST_F(PurchaseServiceTest, HidesPurchasesOfOthers) {
+  const UserAccount author = register_user("автор");
+  const UserAccount first = register_user("первый");
+  const UserAccount second = register_user("второй");
+  const UserAccount stranger = register_user("прохожий");
+
+  const auto first_publication = publish(author, k_text);
+  const auto second_publication = publish(author, "другой текст");
+
+  const auto first_device = dgds::core::generate_device_key();
+  const auto second_device = dgds::core::generate_device_key();
+  ASSERT_TRUE(first_device.has_value());
+  ASSERT_TRUE(second_device.has_value());
+
+  const auto first_receipt =
+      m_purchases.buy(first.user_id, first_publication.publication_id, first_device->public_key, k_purchased_at);
+  const auto second_receipt = m_purchases.buy(second.user_id, second_publication.publication_id,
+                                              second_device->public_key, k_purchased_at + 10);
+
+  ASSERT_TRUE(first_receipt.has_value());
+  ASSERT_TRUE(second_receipt.has_value());
+
+  const auto own = m_purchases.purchases_of(first.user_id);
+
+  ASSERT_TRUE(own.has_value());
+  ASSERT_EQ(own->size(), 1U);
+  EXPECT_EQ((*own)[0].purchase_id, first_receipt->header.purchase_id);
+  EXPECT_EQ((*own)[0].publication.publication_id, first_publication.publication_id);
+
+  for (const auto &summary : own.value()) {
+    EXPECT_NE(summary.purchase_id, second_receipt->header.purchase_id);
+    EXPECT_NE(summary.publication.publication_id, second_publication.publication_id);
+  }
+
+  const auto stranger_purchases = m_purchases.purchases_of(stranger.user_id);
+
+  ASSERT_TRUE(stranger_purchases.has_value());
+  EXPECT_TRUE(stranger_purchases->empty());
+}
+
 } // namespace

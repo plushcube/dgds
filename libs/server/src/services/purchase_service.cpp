@@ -5,6 +5,8 @@
 #include <dgds/core/identity/content_identity.h>
 #include <dgds/core/identity/identifier.h>
 
+#include "summaries.h"
+
 #include <expected>
 
 namespace dgds::server {
@@ -85,6 +87,31 @@ core::Result<core::Receipt> PurchaseService::buy(const core::UserId &user_id, co
   }
 
   return receipt;
+}
+
+core::Result<core::PurchaseSummaries> PurchaseService::purchases_of(const core::UserId &user_id) {
+  const auto purchases = m_metadata.purchases_of_user(user_id);
+
+  if (!purchases.has_value()) {
+    return std::unexpected(purchases.error());
+  }
+
+  core::PurchaseSummaries summaries;
+  summaries.reserve(purchases->size());
+
+  for (const auto &purchase : purchases.value()) {
+    const auto publication = m_metadata.find_publication(purchase.publication_id);
+
+    if (!publication.has_value()) {
+      return std::unexpected(publication.error());
+    }
+
+    summaries.push_back(core::PurchaseSummary{.purchase_id = purchase.purchase_id,
+                                              .publication = summarise_publication(publication.value()),
+                                              .purchased_at = purchase.purchased_at});
+  }
+
+  return summaries;
 }
 
 } // namespace dgds::server

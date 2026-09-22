@@ -1,20 +1,10 @@
 #include <dgds/server/services/catalog_service.h>
 
+#include "summaries.h"
+
 #include <expected>
 
 namespace dgds::server {
-namespace {
-
-core::PublicationSummary summarise(const core::PublicationRecord &record) {
-  return core::PublicationSummary{.publication_id = record.publication_id,
-                                  .title = record.title,
-                                  .file_name = record.file_name,
-                                  .size = record.size,
-                                  .published_at = record.published_at,
-                                  .author_name = record.author_name};
-}
-
-} // namespace
 
 core::Result<core::PublicationSummaries> CatalogService::catalog() {
   const auto records = m_metadata.publications();
@@ -27,7 +17,7 @@ core::Result<core::PublicationSummaries> CatalogService::catalog() {
   summaries.reserve(records->size());
 
   for (const auto &record : records.value()) {
-    summaries.push_back(summarise(record));
+    summaries.push_back(summarise_publication(record));
   }
 
   return summaries;
@@ -51,7 +41,7 @@ core::Result<core::AuthorPublicationSummaries> CatalogService::author_publicatio
     }
 
     summaries.push_back(
-        core::AuthorPublicationSummary{.publication = summarise(record), .purchases = purchases.value()});
+        core::AuthorPublicationSummary{.publication = summarise_publication(record), .purchases = purchases.value()});
   }
 
   return summaries;
