@@ -21,15 +21,15 @@ public:
   [[nodiscard]] core::Result<core::PurchaseSummaries> purchases_of(const core::UserId &user_id);
 
   [[nodiscard]] core::Result<core::Receipt> restore_receipt(const core::UserId &user_id,
-                                                            const core::PurchaseId &purchase_id,
+                                                            const core::PurchaseId &context_id,
                                                             const core::DevicePublicKey &device_key,
                                                             core::Timestamp issued_at);
 
 private:
-  [[nodiscard]] core::Result<core::Receipt> issue_receipt(const core::PurchaseRecord &purchase,
-                                                          const core::PublicationRecord &publication,
-                                                          const core::DevicePublicKey &device_key,
-                                                          core::Timestamp issued_at);
+  [[nodiscard]] core::Result<core::Receipt>
+  issue_receipt(const core::PurchaseId &context_id, const core::UserId &user_id,
+                const core::PublicationRecord &publication, core::Timestamp granted_at,
+                const core::DevicePublicKey &device_key, core::Timestamp issued_at);
 
   core::KeyStore &m_keys;
   core::MetadataRegistry &m_metadata;

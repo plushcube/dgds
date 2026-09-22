@@ -400,4 +400,45 @@ TEST_F(PurchaseServiceTest, RejectsRestoreOfForeignPurchase) {
   EXPECT_EQ(missing.error(), CoreError::purchase_not_found);
 }
 
+TEST_F(PurchaseServiceTest, GrantsAuthorAccessWithoutPurchase) {
+  const UserAccount author = register_user("автор");
+  const UserAccount buyer = register_user("покупатель");
+  const auto publication = publish(author, k_text);
+
+  const auto device = dgds::core::generate_device_key();
+  ASSERT_TRUE(device.has_value());
+
+  const auto receipt = m_purchases.buy(author.user_id, publication.publication_id, device->public_key, k_purchased_at);
+
+  ASSERT_TRUE(receipt.has_value());
+  EXPECT_EQ(receipt->header.purchase_id, publication.publication_id);
+  EXPECT_EQ(receipt->header.user_id, author.user_id);
+  EXPECT_EQ(receipt->header.purchased_at, 1700000000);
+
+  const auto author_tally = m_metadata.purchase_count(publication.publication_id);
+  ASSERT_TRUE(author_tally.has_value());
+  EXPECT_EQ(author_tally.value(), 0U);
+
+  const auto purchased = m_purchases.purchases_of(author.user_id);
+  ASSERT_TRUE(purchased.has_value());
+  EXPECT_TRUE(purchased.value().empty());
+
+  const auto own = m_metadata.find_purchase(publication.publication_id);
+  ASSERT_FALSE(own.has_value());
+  EXPECT_EQ(own.error(), CoreError::purchase_not_found);
+
+  const auto buying_device = dgds::core::generate_device_key();
+  ASSERT_TRUE(buying_device.has_value());
+
+  const auto sale =
+      m_purchases.buy(buyer.user_id, publication.publication_id, buying_device->public_key, k_purchased_at);
+
+  ASSERT_TRUE(sale.has_value());
+  EXPECT_NE(sale->header.purchase_id, publication.publication_id);
+
+  const auto tally = m_metadata.purchase_count(publication.publication_id);
+  ASSERT_TRUE(tally.has_value());
+  EXPECT_EQ(tally.value(), 1U);
+}
+
 } // namespace

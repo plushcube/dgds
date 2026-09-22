@@ -5,6 +5,8 @@
 #include <dgds/core/models/mark.h>
 #include <dgds/core/watermark/mark_channel.h>
 
+#include "access.h"
+
 #include <cstring>
 #include <expected>
 #include <optional>
@@ -13,7 +15,7 @@ namespace dgds::server {
 
 core::Result<core::SealedContent> DeliveryService::mark_for_purchase(const core::PublicationRecord &publication,
                                                                      const core::SealedContent &stored,
-                                                                     const core::PurchaseId &purchase_id) {
+                                                                     const core::PurchaseId &context_id) {
   const core::Content bound_identity = core::as_content(publication.identity);
   const auto plaintext = m_keys.open(publication.identity, stored, bound_identity);
 
@@ -22,7 +24,7 @@ core::Result<core::SealedContent> DeliveryService::mark_for_purchase(const core:
   }
 
   const std::optional<core::ContentBuffer> marked =
-      core::embed_mark(plaintext->view(), core::Mark{.purchase_id = purchase_id, .version = core::k_mark_version});
+      core::embed_mark(plaintext->view(), core::Mark{.purchase_id = context_id, .version = core::k_mark_version});
 
   if (!marked.has_value()) {
     return stored;
@@ -38,37 +40,27 @@ core::Result<core::SealedContent> DeliveryService::mark_for_purchase(const core:
 }
 
 core::Result<core::Package> DeliveryService::fetch_package(const core::UserId &user_id,
-                                                           const core::PurchaseId &purchase_id,
+                                                           const core::PurchaseId &context_id,
                                                            const core::DevicePublicKey &device_key) {
-  const auto purchase = m_metadata.find_purchase(purchase_id);
+  const auto access = resolve_access(user_id, context_id, m_metadata);
 
-  if (!purchase.has_value()) {
-    return std::unexpected(purchase.error());
+  if (!access.has_value()) {
+    return std::unexpected(access.error());
   }
 
-  if (purchase->user_id != user_id) {
-    return std::unexpected(core::CoreError::not_permitted);
-  }
-
-  const auto publication = m_metadata.find_publication(purchase->publication_id);
-
-  if (!publication.has_value()) {
-    return std::unexpected(publication.error());
-  }
-
-  const auto receipt = m_metadata.find_receipt(purchase_id, device_key);
+  const auto receipt = m_metadata.find_receipt(context_id, device_key);
 
   if (!receipt.has_value()) {
     return std::unexpected(receipt.error());
   }
 
-  const auto stored = m_blobs.load(publication->identity);
+  const auto stored = m_blobs.load(access->publication.identity);
 
   if (!stored.has_value()) {
     return std::unexpected(stored.error());
   }
 
-  const auto content = mark_for_purchase(publication.value(), stored.value(), purchase_id);
+  const auto content = mark_for_purchase(access->publication, stored.value(), context_id);
 
   if (!content.has_value()) {
     return std::unexpected(content.error());
@@ -77,11 +69,11 @@ core::Result<core::Package> DeliveryService::fetch_package(const core::UserId &u
   return core::Package{.version = core::k_package_version,
                        .content = content.value(),
                        .wrapped_blob_key = receipt->wrapped_blob_key,
-                       .identity = publication->identity,
-                       .author_key = publication->author_key,
-                       .author_name = publication->author_name,
-                       .signature_algorithm = publication->signature_algorithm,
-                       .signature = publication->signature};
+                       .identity = access->publication.identity,
+                       .author_key = access->publication.author_key,
+                       .author_name = access->publication.author_name,
+                       .signature_algorithm = access->publication.signature_algorithm,
+                       .signature = access->publication.signature};
 }
 
 } // namespace dgds::server

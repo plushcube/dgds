@@ -5,6 +5,7 @@
 #include <dgds/core/identity/content_identity.h>
 #include <dgds/core/identity/identifier.h>
 
+#include "access.h"
 #include "summaries.h"
 
 #include <expected>
@@ -36,6 +37,17 @@ core::Result<core::Receipt> PurchaseService::buy(const core::UserId &user_id, co
     return std::unexpected(publication.error());
   }
 
+  if (publication->author_id == user_id) {
+    const auto own = m_metadata.find_receipt(publication_id, device_key);
+
+    if (own.has_value()) {
+      return own->receipt;
+    }
+
+    return issue_receipt(publication_id, user_id, publication.value(), publication->published_at, device_key,
+                         purchased_at);
+  }
+
   const auto purchase_id = core::generate_identifier();
 
   if (!purchase_id.has_value()) {
@@ -53,36 +65,27 @@ core::Result<core::Receipt> PurchaseService::buy(const core::UserId &user_id, co
     return std::unexpected(added.error());
   }
 
-  return issue_receipt(purchase, publication.value(), device_key, purchased_at);
+  return issue_receipt(purchase.purchase_id, purchase.user_id, publication.value(), purchase.purchased_at, device_key,
+                       purchased_at);
 }
 
 core::Result<core::Receipt> PurchaseService::restore_receipt(const core::UserId &user_id,
-                                                             const core::PurchaseId &purchase_id,
+                                                             const core::PurchaseId &context_id,
                                                              const core::DevicePublicKey &device_key,
                                                              core::Timestamp issued_at) {
-  const auto purchase = m_metadata.find_purchase(purchase_id);
+  const auto access = resolve_access(user_id, context_id, m_metadata);
 
-  if (!purchase.has_value()) {
-    return std::unexpected(purchase.error());
+  if (!access.has_value()) {
+    return std::unexpected(access.error());
   }
 
-  if (purchase->user_id != user_id) {
-    return std::unexpected(core::CoreError::not_permitted);
-  }
-
-  const auto publication = m_metadata.find_publication(purchase->publication_id);
-
-  if (!publication.has_value()) {
-    return std::unexpected(publication.error());
-  }
-
-  return issue_receipt(purchase.value(), publication.value(), device_key, issued_at);
+  return issue_receipt(access->context_id, user_id, access->publication, access->granted_at, device_key, issued_at);
 }
 
-core::Result<core::Receipt> PurchaseService::issue_receipt(const core::PurchaseRecord &purchase,
-                                                           const core::PublicationRecord &publication,
-                                                           const core::DevicePublicKey &device_key,
-                                                           core::Timestamp issued_at) {
+core::Result<core::Receipt>
+PurchaseService::issue_receipt(const core::PurchaseId &context_id, const core::UserId &user_id,
+                               const core::PublicationRecord &publication, core::Timestamp granted_at,
+                               const core::DevicePublicKey &device_key, core::Timestamp issued_at) {
   auto purchase_key = core::generate_key();
 
   if (!purchase_key.has_value()) {
@@ -97,9 +100,9 @@ core::Result<core::Receipt> PurchaseService::issue_receipt(const core::PurchaseR
   }
 
   const core::ReceiptHeader header{.version = core::k_receipt_version,
-                                   .purchase_id = purchase.purchase_id,
-                                   .user_id = purchase.user_id,
-                                   .purchased_at = purchase.purchased_at,
+                                   .purchase_id = context_id,
+                                   .user_id = user_id,
+                                   .purchased_at = granted_at,
                                    .issued_at = issued_at};
 
   const auto envelope = core::wrap_receipt_key(purchase_key.value(), device_key, header);

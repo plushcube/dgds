@@ -9,6 +9,7 @@
 #include <dgds/core/envelope/receipt.h>
 #include <dgds/core/identity/canonical_form.h>
 #include <dgds/core/identity/content_identity.h>
+#include <dgds/core/identity/identifier.h>
 #include <dgds/core/models/mark.h>
 #include <dgds/core/signature/author_signature.h>
 #include <dgds/core/watermark/mark_channel.h>
@@ -318,6 +319,77 @@ TEST_F(DeliveryServiceTest, SharesUnmarkedDelivery) {
   ASSERT_TRUE(content.has_value());
   EXPECT_EQ(content->view(), k_short_text);
   EXPECT_FALSE(read_mark(content->view()).has_value());
+}
+
+TEST_F(DeliveryServiceTest, DeliversMarkedCopyToAuthor) {
+  const UserAccount author = register_user("автор");
+  const auto publication = publish(author, markable_text());
+
+  const auto device = dgds::core::generate_device_key();
+  ASSERT_TRUE(device.has_value());
+
+  const auto receipt = m_purchases.buy(author.user_id, publication.publication_id, device->public_key, k_purchased_at);
+  ASSERT_TRUE(receipt.has_value());
+
+  const auto package = m_delivery.fetch_package(author.user_id, publication.publication_id, device->public_key);
+  ASSERT_TRUE(package.has_value());
+  EXPECT_EQ(package->identity, publication.identity);
+
+  const auto receipt_key = open_receipt_key(receipt.value(), device->private_key);
+  ASSERT_TRUE(receipt_key.has_value());
+
+  const auto content = open_package(package.value(), receipt_key.value());
+  ASSERT_TRUE(content.has_value());
+
+  const auto mark = read_mark(content->view());
+  ASSERT_TRUE(mark.has_value());
+  EXPECT_EQ(mark->purchase_id, publication.publication_id);
+
+  const auto other_device = dgds::core::generate_device_key();
+  ASSERT_TRUE(other_device.has_value());
+
+  const auto restored = m_purchases.restore_receipt(author.user_id, publication.publication_id,
+                                                    other_device->public_key, k_purchased_at + 10);
+  ASSERT_TRUE(restored.has_value());
+  EXPECT_EQ(restored->header.purchase_id, publication.publication_id);
+  EXPECT_EQ(restored->header.purchased_at, 1700000000);
+  EXPECT_EQ(restored->header.issued_at, k_purchased_at + 10);
+
+  const auto second_package =
+      m_delivery.fetch_package(author.user_id, publication.publication_id, other_device->public_key);
+  ASSERT_TRUE(second_package.has_value());
+
+  const auto second_key = open_receipt_key(restored.value(), other_device->private_key);
+  ASSERT_TRUE(second_key.has_value());
+
+  const auto second_content = open_package(second_package.value(), second_key.value());
+  ASSERT_TRUE(second_content.has_value());
+  EXPECT_EQ(second_content->view(), content->view());
+}
+
+TEST_F(DeliveryServiceTest, RejectsForeignAccessByPublicationId) {
+  const UserAccount author = register_user("автор");
+  const UserAccount stranger = register_user("третий");
+  const auto publication = publish(author, k_text);
+
+  const auto device = dgds::core::generate_device_key();
+  ASSERT_TRUE(device.has_value());
+
+  const auto fetched = m_delivery.fetch_package(stranger.user_id, publication.publication_id, device->public_key);
+  ASSERT_FALSE(fetched.has_value());
+  EXPECT_EQ(fetched.error(), CoreError::not_permitted);
+
+  const auto restored =
+      m_purchases.restore_receipt(stranger.user_id, publication.publication_id, device->public_key, k_purchased_at);
+  ASSERT_FALSE(restored.has_value());
+  EXPECT_EQ(restored.error(), CoreError::not_permitted);
+
+  const auto missing = dgds::core::generate_identifier();
+  ASSERT_TRUE(missing.has_value());
+
+  const auto unknown = m_delivery.fetch_package(stranger.user_id, missing.value(), device->public_key);
+  ASSERT_FALSE(unknown.has_value());
+  EXPECT_EQ(unknown.error(), CoreError::purchase_not_found);
 }
 
 } // namespace
