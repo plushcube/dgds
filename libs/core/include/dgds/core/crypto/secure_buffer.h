@@ -18,11 +18,11 @@ public:
 
   void wipe();
 
-  [[nodiscard]] unsigned char *data();
-  [[nodiscard]] const unsigned char *data() const;
-  [[nodiscard]] Content view() const;
-  [[nodiscard]] std::size_t size() const;
-  [[nodiscard]] bool empty() const;
+  [[nodiscard]] unsigned char *data() { return reinterpret_cast<unsigned char *>(m_data.data()); }
+  [[nodiscard]] const unsigned char *data() const { return reinterpret_cast<const unsigned char *>(m_data.data()); }
+  [[nodiscard]] Content view() const { return Content(m_data.data(), m_data.size()); }
+  [[nodiscard]] std::size_t size() const { return m_data.size(); }
+  [[nodiscard]] bool empty() const { return m_data.empty(); }
 
 private:
   void protect();

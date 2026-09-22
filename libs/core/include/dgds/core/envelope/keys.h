@@ -1,9 +1,8 @@
 #pragma once
 
 #include <dgds/core/models/content.h>
-#include <dgds/core/models/result.h>
-#include <dgds/core/models/sealed_content.h>
-#include <dgds/core/models/symmetric_key.h>
+#include <dgds/core/models/crypto.h>
+#include <dgds/core/models/errors.h>
 
 namespace dgds::core {
 

@@ -1,11 +1,9 @@
 #pragma once
 
-#include <dgds/core/models/author_key.h>
+#include <dgds/core/models/author.h>
 #include <dgds/core/models/content.h>
-#include <dgds/core/models/content_identity.h>
-#include <dgds/core/models/result.h>
-#include <dgds/core/models/signature.h>
-#include <dgds/core/models/signature_algorithm.h>
+#include <dgds/core/models/errors.h>
+#include <dgds/core/models/identity.h>
 
 namespace dgds::core {
 

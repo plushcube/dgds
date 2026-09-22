@@ -35,16 +35,6 @@ void SecureBuffer::wipe() {
   }
 }
 
-unsigned char *SecureBuffer::data() { return reinterpret_cast<unsigned char *>(m_data.data()); }
-
-const unsigned char *SecureBuffer::data() const { return reinterpret_cast<const unsigned char *>(m_data.data()); }
-
-Content SecureBuffer::view() const { return Content(m_data.data(), m_data.size()); }
-
-std::size_t SecureBuffer::size() const { return m_data.size(); }
-
-bool SecureBuffer::empty() const { return m_data.empty(); }
-
 void SecureBuffer::protect() {
   if (m_data.empty()) {
     return;

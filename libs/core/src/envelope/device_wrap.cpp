@@ -1,7 +1,7 @@
 #include <dgds/core/envelope/device_wrap.h>
 
 #include <dgds/core/envelope/keys.h>
-#include <dgds/core/models/secret_bytes.h>
+#include <dgds/core/models/crypto.h>
 
 #include <openssl/core_names.h>
 #include <openssl/evp.h>

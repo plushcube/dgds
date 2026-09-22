@@ -1,3 +1,4 @@
+add_subdirectory(support)
 add_subdirectory(blob-store)
 add_subdirectory(key-store)
 add_subdirectory(metadata-registry)

@@ -10,13 +10,6 @@
 #include <expected>
 
 namespace dgds::core {
-namespace {
-
-Content as_content(const ContentIdentity &identity) {
-  return Content(reinterpret_cast<const char *>(identity.data()), identity.size());
-}
-
-} // namespace
 
 Result<SecureBuffer> open_package(const Package &package, const SymmetricKey &purchase_key) {
   if (package.version != k_package_version) {

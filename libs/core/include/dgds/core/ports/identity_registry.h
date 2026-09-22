@@ -1,8 +1,7 @@
 #pragma once
 
-#include <dgds/core/models/claim_outcome.h>
-#include <dgds/core/models/content_identity.h>
-#include <dgds/core/models/result.h>
+#include <dgds/core/models/errors.h>
+#include <dgds/core/models/identity.h>
 
 namespace dgds::core {
 

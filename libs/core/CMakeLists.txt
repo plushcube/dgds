@@ -1,4 +1,6 @@
-add_library(dgds-core STATIC "src/crypto/aead.cpp"
+add_library(dgds-core STATIC "src/codec/binary.cpp"
+                             "src/crypto/aead.cpp"
+                             "src/crypto/sealed_content_codec.cpp"
                              "src/crypto/secure_buffer.cpp"
                              "src/envelope/device_wrap.cpp"
                              "src/envelope/keys.cpp"

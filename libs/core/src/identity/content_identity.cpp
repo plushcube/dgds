@@ -7,6 +7,10 @@
 
 namespace dgds::core {
 
+Content as_content(const ContentIdentity &identity) {
+  return Content(reinterpret_cast<const char *>(identity.data()), identity.size());
+}
+
 Result<ContentIdentity> content_identity(Content content) {
   const CanonicalForm canonical = canonical_form(content);
 
@@ -22,18 +26,20 @@ Result<ContentIdentity> content_identity(Content content) {
   return identity;
 }
 
-std::string to_hex(const ContentIdentity &identity) {
+std::string to_hex(const std::uint8_t *bytes, std::size_t size) {
   constexpr char k_digits[] = "0123456789abcdef";
 
   std::string text;
-  text.reserve(identity.size() * 2);
+  text.reserve(size * 2);
 
-  for (const std::uint8_t byte : identity) {
-    text.push_back(k_digits[byte >> 4]);
-    text.push_back(k_digits[byte & 0x0F]);
+  for (std::size_t index = 0; index < size; ++index) {
+    text.push_back(k_digits[bytes[index] >> 4]);
+    text.push_back(k_digits[bytes[index] & 0x0F]);
   }
 
   return text;
 }
+
+std::string to_hex(const ContentIdentity &identity) { return to_hex(identity.data(), identity.size()); }
 
 } // namespace dgds::core
