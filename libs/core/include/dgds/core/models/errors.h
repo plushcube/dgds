@@ -20,6 +20,7 @@ enum class CoreError {
   user_name_taken,
   authorization_failed,
   publication_not_found,
+  content_duplicate,
   purchase_not_found,
   record_exists,
   receipt_version_unsupported,
