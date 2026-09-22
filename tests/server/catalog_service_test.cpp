@@ -178,15 +178,13 @@ TEST_F(CatalogServiceTest, CountsPurchasesInAuthorList) {
                   .add_purchase(dgds::core::PurchaseRecord{.purchase_id = 1,
                                                            .user_id = buyer.user_id,
                                                            .publication_id = sold.publication_id,
-                                                           .purchased_at = k_published_at + 10,
-                                                           .wrapped_blob_key = dgds::core::SealedContent{}})
+                                                           .purchased_at = k_published_at + 10})
                   .has_value());
   ASSERT_TRUE(m_metadata
                   .add_purchase(dgds::core::PurchaseRecord{.purchase_id = 2,
                                                            .user_id = author.user_id,
                                                            .publication_id = sold.publication_id,
-                                                           .purchased_at = k_published_at + 11,
-                                                           .wrapped_blob_key = dgds::core::SealedContent{}})
+                                                           .purchased_at = k_published_at + 11})
                   .has_value());
 
   const auto own = m_catalog.author_publications(author.user_id);

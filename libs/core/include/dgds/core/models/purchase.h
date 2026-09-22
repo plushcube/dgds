@@ -17,7 +17,6 @@ struct PurchaseRecord {
   UserId user_id;
   PublicationId publication_id;
   Timestamp purchased_at;
-  SealedContent wrapped_blob_key;
 };
 
 struct PurchaseSummary {

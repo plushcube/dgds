@@ -33,6 +33,7 @@ struct Receipt {
 
 struct ReceiptRecord {
   DevicePublicKey device_key;
+  SealedContent wrapped_blob_key;
   Receipt receipt;
 };
 

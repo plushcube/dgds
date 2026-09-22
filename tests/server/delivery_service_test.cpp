@@ -122,7 +122,7 @@ TEST_F(DeliveryServiceTest, DeliversPackageToOwner) {
   const auto receipt = m_purchases.buy(buyer.user_id, publication.publication_id, device->public_key, k_purchased_at);
   ASSERT_TRUE(receipt.has_value());
 
-  const auto package = m_delivery.fetch_package(buyer.user_id, receipt->header.purchase_id);
+  const auto package = m_delivery.fetch_package(buyer.user_id, receipt->header.purchase_id, device->public_key);
 
   ASSERT_TRUE(package.has_value());
   EXPECT_EQ(package->version, k_package_version);
@@ -151,8 +151,8 @@ TEST_F(DeliveryServiceTest, RepeatsDeliveryForSamePurchase) {
   const auto receipt = m_purchases.buy(buyer.user_id, publication.publication_id, device->public_key, k_purchased_at);
   ASSERT_TRUE(receipt.has_value());
 
-  const auto first = m_delivery.fetch_package(buyer.user_id, receipt->header.purchase_id);
-  const auto second = m_delivery.fetch_package(buyer.user_id, receipt->header.purchase_id);
+  const auto first = m_delivery.fetch_package(buyer.user_id, receipt->header.purchase_id, device->public_key);
+  const auto second = m_delivery.fetch_package(buyer.user_id, receipt->header.purchase_id, device->public_key);
 
   ASSERT_TRUE(first.has_value());
   ASSERT_TRUE(second.has_value());
@@ -165,7 +165,7 @@ TEST_F(DeliveryServiceTest, RepeatsDeliveryForSamePurchase) {
 TEST_F(DeliveryServiceTest, RejectsMissingPurchase) {
   const UserAccount buyer = register_user("покупатель");
 
-  const auto package = m_delivery.fetch_package(buyer.user_id, 4242);
+  const auto package = m_delivery.fetch_package(buyer.user_id, 4242, dgds::core::DevicePublicKey{});
 
   ASSERT_FALSE(package.has_value());
   EXPECT_EQ(package.error(), CoreError::purchase_not_found);
@@ -183,7 +183,7 @@ TEST_F(DeliveryServiceTest, RejectsForeignPurchase) {
   const auto receipt = m_purchases.buy(owner.user_id, publication.publication_id, device->public_key, k_purchased_at);
   ASSERT_TRUE(receipt.has_value());
 
-  const auto package = m_delivery.fetch_package(stranger.user_id, receipt->header.purchase_id);
+  const auto package = m_delivery.fetch_package(stranger.user_id, receipt->header.purchase_id, device->public_key);
 
   ASSERT_FALSE(package.has_value());
   EXPECT_EQ(package.error(), CoreError::not_permitted);
@@ -192,14 +192,11 @@ TEST_F(DeliveryServiceTest, RejectsForeignPurchase) {
 TEST_F(DeliveryServiceTest, RejectsPurchaseOfMissingPublication) {
   const UserAccount buyer = register_user("покупатель");
 
-  const auto added = m_metadata.add_purchase(dgds::core::PurchaseRecord{.purchase_id = 777,
-                                                                        .user_id = buyer.user_id,
-                                                                        .publication_id = 888,
-                                                                        .purchased_at = k_purchased_at,
-                                                                        .wrapped_blob_key = {}});
+  const auto added = m_metadata.add_purchase(dgds::core::PurchaseRecord{
+      .purchase_id = 777, .user_id = buyer.user_id, .publication_id = 888, .purchased_at = k_purchased_at});
   ASSERT_TRUE(added.has_value());
 
-  const auto package = m_delivery.fetch_package(buyer.user_id, 777);
+  const auto package = m_delivery.fetch_package(buyer.user_id, 777, dgds::core::DevicePublicKey{});
 
   ASSERT_FALSE(package.has_value());
   EXPECT_EQ(package.error(), CoreError::publication_not_found);

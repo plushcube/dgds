@@ -41,7 +41,7 @@ public:
   [[nodiscard]] virtual Result<PurchaseRecords> purchases_of_user(const UserId &user_id) = 0;
   [[nodiscard]] virtual Result<std::size_t> purchase_count(const PublicationId &publication_id) = 0;
 
-  [[nodiscard]] virtual Result<void> add_receipt(const ReceiptRecord &record) = 0;
+  [[nodiscard]] virtual Result<void> save_receipt(const ReceiptRecord &record) = 0;
   [[nodiscard]] virtual Result<ReceiptRecord> find_receipt(const PurchaseId &purchase_id,
                                                            const DevicePublicKey &device_key) = 0;
 };

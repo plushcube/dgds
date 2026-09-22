@@ -5,7 +5,8 @@
 namespace dgds::server {
 
 core::Result<core::Package> DeliveryService::fetch_package(const core::UserId &user_id,
-                                                           const core::PurchaseId &purchase_id) {
+                                                           const core::PurchaseId &purchase_id,
+                                                           const core::DevicePublicKey &device_key) {
   const auto purchase = m_metadata.find_purchase(purchase_id);
 
   if (!purchase.has_value()) {
@@ -22,6 +23,12 @@ core::Result<core::Package> DeliveryService::fetch_package(const core::UserId &u
     return std::unexpected(publication.error());
   }
 
+  const auto receipt = m_metadata.find_receipt(purchase_id, device_key);
+
+  if (!receipt.has_value()) {
+    return std::unexpected(receipt.error());
+  }
+
   const auto content = m_blobs.load(publication->identity);
 
   if (!content.has_value()) {
@@ -30,7 +37,7 @@ core::Result<core::Package> DeliveryService::fetch_package(const core::UserId &u
 
   return core::Package{.version = core::k_package_version,
                        .content = content.value(),
-                       .wrapped_blob_key = purchase->wrapped_blob_key,
+                       .wrapped_blob_key = receipt->wrapped_blob_key,
                        .identity = publication->identity,
                        .author_key = publication->author_key,
                        .author_name = publication->author_name,

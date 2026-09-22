@@ -59,7 +59,7 @@ static_assert(k_returns_no_key<&MetadataRegistry::find_purchase>);
 static_assert(k_returns_no_key<&MetadataRegistry::find_purchase_of>);
 static_assert(k_returns_no_key<&MetadataRegistry::purchases_of_user>);
 static_assert(k_returns_no_key<&MetadataRegistry::purchase_count>);
-static_assert(k_returns_no_key<&MetadataRegistry::add_receipt>);
+static_assert(k_returns_no_key<&MetadataRegistry::save_receipt>);
 static_assert(k_returns_no_key<&MetadataRegistry::find_receipt>);
 
 static_assert(k_returns_no_key<&IdentityRegistry::claim>);

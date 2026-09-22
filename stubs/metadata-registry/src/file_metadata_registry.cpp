@@ -301,25 +301,14 @@ core::Result<std::size_t> FileMetadataRegistry::purchase_count(const core::Publi
   return static_cast<std::size_t>(count);
 }
 
-core::Result<void> FileMetadataRegistry::add_receipt(const core::ReceiptRecord &record) {
-  const auto path = receipt_path(record.receipt.header.purchase_id, record.device_key);
-  const auto present = file_exists(path);
-
-  if (!present.has_value()) {
-    return std::unexpected(present.error());
-  }
-
-  if (present.value()) {
-    return std::unexpected(core::CoreError::record_exists);
-  }
-
+core::Result<void> FileMetadataRegistry::save_receipt(const core::ReceiptRecord &record) {
   const auto encoded = encode_receipt_record(record);
 
   if (!encoded.has_value()) {
     return std::unexpected(k_broken_record);
   }
 
-  return store_file(path, encoded.value());
+  return store_file(receipt_path(record.receipt.header.purchase_id, record.device_key), encoded.value());
 }
 
 core::Result<core::ReceiptRecord> FileMetadataRegistry::find_receipt(const core::PurchaseId &purchase_id,

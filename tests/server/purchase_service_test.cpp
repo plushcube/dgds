@@ -1,3 +1,4 @@
+#include <dgds/server/services/delivery_service.h>
 #include <dgds/server/services/publication_service.h>
 #include <dgds/server/services/purchase_service.h>
 #include <dgds/server/services/session_store.h>
@@ -6,6 +7,7 @@
 #include <dgds/core/crypto/aead.h>
 #include <dgds/core/envelope/device_wrap.h>
 #include <dgds/core/envelope/keys.h>
+#include <dgds/core/envelope/package.h>
 #include <dgds/core/envelope/receipt.h>
 #include <dgds/core/identity/content_identity.h>
 #include <dgds/core/signature/author_signature.h>
@@ -31,6 +33,7 @@ using dgds::core::AuthorPrivateKey;
 using dgds::core::Content;
 using dgds::core::CoreError;
 using dgds::core::decrypt;
+using dgds::core::open_package;
 using dgds::core::open_receipt_key;
 using dgds::core::PublicationDraft;
 using dgds::core::PublicationRecord;
@@ -39,6 +42,7 @@ using dgds::core::sign_author;
 using dgds::core::Signature;
 using dgds::core::unwrap_key;
 using dgds::core::UserAccount;
+using dgds::server::DeliveryService;
 using dgds::server::PublicationService;
 using dgds::server::PurchaseService;
 using dgds::server::UserService;
@@ -103,6 +107,7 @@ protected:
   UserService m_users{m_metadata, m_sessions};
   PublicationService m_publications{m_identities, m_keys, m_blobs, m_metadata};
   PurchaseService m_purchases{m_keys, m_metadata};
+  DeliveryService m_delivery{m_blobs, m_metadata};
 
 private:
   dgds::server::SessionStore m_sessions;
@@ -128,10 +133,10 @@ TEST_F(PurchaseServiceTest, BuysPublicationAndOpensPackage) {
   const auto receipt_key = open_receipt_key(receipt.value(), device->private_key);
   ASSERT_TRUE(receipt_key.has_value());
 
-  const auto purchase = m_metadata.find_purchase(receipt->header.purchase_id);
-  ASSERT_TRUE(purchase.has_value());
+  const auto record = m_metadata.find_receipt(receipt->header.purchase_id, device->public_key);
+  ASSERT_TRUE(record.has_value());
 
-  const auto file_key = unwrap_key(purchase->wrapped_blob_key, receipt_key.value(), as_content(publication.identity));
+  const auto file_key = unwrap_key(record->wrapped_blob_key, receipt_key.value(), as_content(publication.identity));
   ASSERT_TRUE(file_key.has_value());
 
   const auto stored = m_blobs.load(publication.identity);
@@ -288,6 +293,111 @@ TEST_F(PurchaseServiceTest, HidesPurchasesOfOthers) {
 
   ASSERT_TRUE(stranger_purchases.has_value());
   EXPECT_TRUE(stranger_purchases->empty());
+}
+
+TEST_F(PurchaseServiceTest, RestoresReceiptForAnotherDevice) {
+  const UserAccount author = register_user("автор");
+  const UserAccount buyer = register_user("покупатель");
+  const auto publication = publish(author, k_text);
+
+  const auto first_device = dgds::core::generate_device_key();
+  const auto second_device = dgds::core::generate_device_key();
+  ASSERT_TRUE(first_device.has_value());
+  ASSERT_TRUE(second_device.has_value());
+
+  const auto bought =
+      m_purchases.buy(buyer.user_id, publication.publication_id, first_device->public_key, k_purchased_at);
+  ASSERT_TRUE(bought.has_value());
+
+  const auto restored = m_purchases.restore_receipt(buyer.user_id, bought->header.purchase_id,
+                                                    second_device->public_key, k_purchased_at + 300);
+
+  ASSERT_TRUE(restored.has_value());
+  EXPECT_EQ(restored->header.purchase_id, bought->header.purchase_id);
+  EXPECT_EQ(restored->header.user_id, buyer.user_id);
+  EXPECT_EQ(restored->header.purchased_at, k_purchased_at);
+  EXPECT_EQ(restored->header.issued_at, k_purchased_at + 300);
+  EXPECT_NE(restored->wrapped_key.ephemeral_key, bought->wrapped_key.ephemeral_key);
+
+  const auto first_record = m_metadata.find_receipt(bought->header.purchase_id, first_device->public_key);
+  const auto second_record = m_metadata.find_receipt(bought->header.purchase_id, second_device->public_key);
+  ASSERT_TRUE(first_record.has_value());
+  ASSERT_TRUE(second_record.has_value());
+  EXPECT_NE(second_record->device_key, first_record->device_key);
+  EXPECT_NE(second_record->wrapped_blob_key.ciphertext, first_record->wrapped_blob_key.ciphertext);
+
+  const auto count = m_metadata.purchase_count(publication.publication_id);
+  ASSERT_TRUE(count.has_value());
+  EXPECT_EQ(count.value(), 1U);
+
+  for (const auto &device : {first_device.value(), second_device.value()}) {
+    const auto package = m_delivery.fetch_package(buyer.user_id, bought->header.purchase_id, device.public_key);
+    ASSERT_TRUE(package.has_value());
+
+    const auto receipt = m_metadata.find_receipt(bought->header.purchase_id, device.public_key);
+    ASSERT_TRUE(receipt.has_value());
+
+    const auto receipt_key = open_receipt_key(receipt->receipt, device.private_key);
+    ASSERT_TRUE(receipt_key.has_value());
+
+    const auto content = open_package(package.value(), receipt_key.value());
+    ASSERT_TRUE(content.has_value());
+    EXPECT_EQ(content->view(), k_text);
+  }
+}
+
+TEST_F(PurchaseServiceTest, RefreshesReceiptForSameDevice) {
+  const UserAccount author = register_user("автор");
+  const UserAccount buyer = register_user("покупатель");
+  const auto publication = publish(author, k_text);
+
+  const auto device = dgds::core::generate_device_key();
+  ASSERT_TRUE(device.has_value());
+
+  const auto bought = m_purchases.buy(buyer.user_id, publication.publication_id, device->public_key, k_purchased_at);
+  ASSERT_TRUE(bought.has_value());
+
+  const auto refreshed =
+      m_purchases.restore_receipt(buyer.user_id, bought->header.purchase_id, device->public_key, k_purchased_at + 600);
+
+  ASSERT_TRUE(refreshed.has_value());
+  EXPECT_EQ(refreshed->header.purchased_at, k_purchased_at);
+  EXPECT_EQ(refreshed->header.issued_at, k_purchased_at + 600);
+
+  const auto package = m_delivery.fetch_package(buyer.user_id, bought->header.purchase_id, device->public_key);
+  ASSERT_TRUE(package.has_value());
+
+  const auto receipt_key = open_receipt_key(refreshed.value(), device->private_key);
+  ASSERT_TRUE(receipt_key.has_value());
+
+  const auto content = open_package(package.value(), receipt_key.value());
+
+  ASSERT_TRUE(content.has_value());
+  EXPECT_EQ(content->view(), k_text);
+}
+
+TEST_F(PurchaseServiceTest, RejectsRestoreOfForeignPurchase) {
+  const UserAccount author = register_user("автор");
+  const UserAccount owner = register_user("владелец");
+  const UserAccount stranger = register_user("чужой");
+  const auto publication = publish(author, k_text);
+
+  const auto device = dgds::core::generate_device_key();
+  ASSERT_TRUE(device.has_value());
+
+  const auto bought = m_purchases.buy(owner.user_id, publication.publication_id, device->public_key, k_purchased_at);
+  ASSERT_TRUE(bought.has_value());
+
+  const auto foreign = m_purchases.restore_receipt(stranger.user_id, bought->header.purchase_id, device->public_key,
+                                                   k_purchased_at + 900);
+
+  ASSERT_FALSE(foreign.has_value());
+  EXPECT_EQ(foreign.error(), CoreError::not_permitted);
+
+  const auto missing = m_purchases.restore_receipt(owner.user_id, 5150, device->public_key, k_purchased_at + 900);
+
+  ASSERT_FALSE(missing.has_value());
+  EXPECT_EQ(missing.error(), CoreError::purchase_not_found);
 }
 
 } // namespace
