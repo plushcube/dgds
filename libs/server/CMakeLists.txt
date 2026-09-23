@@ -1,4 +1,5 @@
 add_library(dgds-server STATIC "src/services/access.cpp"
+                               "src/services/attribution_service.cpp"
                                "src/services/catalog_service.cpp"
                                "src/services/delivery_service.cpp"
                                "src/services/publication_service.cpp"
