@@ -31,18 +31,6 @@ bool read_text(core::Reader &reader, core::ContentBuffer &text) {
   return reader.read_bytes(reinterpret_cast<std::uint8_t *>(text.data()), text.size());
 }
 
-core::Result<core::ContentBuffer> append_sealed(core::ContentBuffer &data, const core::SealedContent &sealed) {
-  const auto encoded = core::encode_sealed_content(sealed);
-
-  if (!encoded.has_value()) {
-    return std::unexpected(k_broken_record);
-  }
-
-  data.append(encoded.value());
-
-  return data;
-}
-
 } // namespace
 
 core::Result<core::ContentBuffer> encode_user(const core::UserAccount &account) {
@@ -123,7 +111,7 @@ core::Result<core::ContentBuffer> encode_purchase(const core::PurchaseRecord &pu
   core::append_integer(data, purchase.publication_id, core::k_integer_size);
   core::append_integer(data, static_cast<std::uint64_t>(purchase.purchased_at), core::k_integer_size);
 
-  return append_sealed(data, purchase.wrapped_blob_key);
+  return data;
 }
 
 core::Result<core::PurchaseRecord> decode_purchase(core::Content data) {
@@ -137,20 +125,13 @@ core::Result<core::PurchaseRecord> decode_purchase(core::Content data) {
   if (!reader.read_integer(purchase_id, core::k_integer_size) ||
       !reader.read_bytes(purchase.user_id.data(), purchase.user_id.size()) ||
       !reader.read_integer(publication_id, core::k_integer_size) ||
-      !reader.read_integer(purchased_at, core::k_integer_size)) {
-    return std::unexpected(k_broken_record);
-  }
-
-  auto wrapped = core::decode_sealed_content(reader.rest());
-
-  if (!wrapped.has_value()) {
+      !reader.read_integer(purchased_at, core::k_integer_size) || !reader.empty()) {
     return std::unexpected(k_broken_record);
   }
 
   purchase.purchase_id = purchase_id;
   purchase.publication_id = publication_id;
   purchase.purchased_at = static_cast<core::Timestamp>(purchased_at);
-  purchase.wrapped_blob_key = std::move(wrapped.value());
 
   return purchase;
 }
@@ -162,10 +143,18 @@ core::Result<core::ContentBuffer> encode_receipt_record(const core::ReceiptRecor
     return std::unexpected(k_broken_record);
   }
 
+  const auto wrapped = core::encode_sealed_content(record.wrapped_blob_key);
+
+  if (!wrapped.has_value()) {
+    return std::unexpected(k_broken_record);
+  }
+
   core::ContentBuffer data;
 
   core::append_bytes(data, record.device_key.data(), record.device_key.size());
+  core::append_integer(data, receipt.value().size(), core::k_length_size);
   data.append(receipt.value());
+  data.append(wrapped.value());
 
   return data;
 }
@@ -174,18 +163,27 @@ core::Result<core::ReceiptRecord> decode_receipt_record(core::Content data) {
   core::Reader reader(data);
 
   core::ReceiptRecord record{};
+  std::uint64_t length = 0;
 
-  if (!reader.read_bytes(record.device_key.data(), record.device_key.size())) {
+  if (!reader.read_bytes(record.device_key.data(), record.device_key.size()) ||
+      !reader.read_integer(length, core::k_length_size) || length > reader.remaining()) {
     return std::unexpected(k_broken_record);
   }
 
-  auto receipt = core::decode_receipt(reader.rest());
+  const auto receipt = core::decode_receipt(reader.rest().substr(0, static_cast<std::size_t>(length)));
 
   if (!receipt.has_value()) {
     return std::unexpected(k_broken_record);
   }
 
-  record.receipt = std::move(receipt.value());
+  const auto wrapped = core::decode_sealed_content(reader.rest().substr(static_cast<std::size_t>(length)));
+
+  if (!wrapped.has_value()) {
+    return std::unexpected(k_broken_record);
+  }
+
+  record.receipt = receipt.value();
+  record.wrapped_blob_key = wrapped.value();
 
   return record;
 }

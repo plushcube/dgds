@@ -10,9 +10,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <latch>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unistd.h>
+#include <vector>
 
 namespace {
 
@@ -102,11 +105,8 @@ PublicationRecord make_publication(std::uint64_t publication_id, const UserId &a
 }
 
 PurchaseRecord make_purchase(std::uint64_t purchase_id, const UserId &user_id, std::uint64_t publication_id) {
-  return PurchaseRecord{.purchase_id = purchase_id,
-                        .user_id = user_id,
-                        .publication_id = publication_id,
-                        .purchased_at = 1700000500,
-                        .wrapped_blob_key = make_sealed(static_cast<std::uint8_t>(purchase_id))};
+  return PurchaseRecord{
+      .purchase_id = purchase_id, .user_id = user_id, .publication_id = publication_id, .purchased_at = 1700000500};
 }
 
 ReceiptRecord make_receipt_record(std::uint64_t purchase_id, const UserId &user_id, std::uint8_t seed) {
@@ -119,6 +119,7 @@ ReceiptRecord make_receipt_record(std::uint64_t purchase_id, const UserId &user_
   const DeviceEnvelope envelope{.ephemeral_key = make_device_key(seed), .wrapped = make_sealed(seed)};
 
   return ReceiptRecord{.device_key = make_device_key(static_cast<std::uint8_t>(seed + 1)),
+                       .wrapped_blob_key = make_sealed(seed),
                        .receipt = Receipt{.header = header, .wrapped_key = envelope}};
 }
 
@@ -253,10 +254,6 @@ TEST_F(MetadataRegistryTest, KeepsPurchaseOfUserAndPublication) {
   EXPECT_EQ(by_id->purchased_at, purchase.purchased_at);
   EXPECT_EQ(by_id->user_id, purchase.user_id);
   EXPECT_EQ(by_id->publication_id, purchase.publication_id);
-  EXPECT_EQ(by_id->wrapped_blob_key.algorithm, purchase.wrapped_blob_key.algorithm);
-  EXPECT_EQ(by_id->wrapped_blob_key.nonce, purchase.wrapped_blob_key.nonce);
-  EXPECT_EQ(by_id->wrapped_blob_key.ciphertext, purchase.wrapped_blob_key.ciphertext);
-  EXPECT_EQ(by_id->wrapped_blob_key.tag, purchase.wrapped_blob_key.tag);
 }
 
 TEST_F(MetadataRegistryTest, ListsPurchasesOfUserOnly) {
@@ -317,13 +314,16 @@ TEST_F(MetadataRegistryTest, KeepsReceiptOfDevice) {
   const ReceiptRecord record = make_receipt_record(101, account.user_id, 16);
 
   ASSERT_TRUE(make_registry().add_user(account).has_value());
-  ASSERT_TRUE(make_registry().add_receipt(record).has_value());
+  ASSERT_TRUE(make_registry().save_receipt(record).has_value());
 
   const auto found = make_registry().find_receipt(101, record.device_key);
   const auto foreign = make_registry().find_receipt(101, make_device_key(200));
 
   ASSERT_TRUE(found.has_value());
   EXPECT_EQ(found->device_key, record.device_key);
+  EXPECT_EQ(found->wrapped_blob_key.nonce, record.wrapped_blob_key.nonce);
+  EXPECT_EQ(found->wrapped_blob_key.ciphertext, record.wrapped_blob_key.ciphertext);
+  EXPECT_EQ(found->wrapped_blob_key.tag, record.wrapped_blob_key.tag);
   EXPECT_EQ(found->receipt.header, record.receipt.header);
   EXPECT_EQ(found->receipt.wrapped_key.ephemeral_key, record.receipt.wrapped_key.ephemeral_key);
   EXPECT_EQ(found->receipt.wrapped_key.wrapped.nonce, record.receipt.wrapped_key.wrapped.nonce);
@@ -332,6 +332,48 @@ TEST_F(MetadataRegistryTest, KeepsReceiptOfDevice) {
 
   ASSERT_FALSE(foreign.has_value());
   EXPECT_EQ(foreign.error(), CoreError::receipt_not_found);
+}
+
+TEST_F(MetadataRegistryTest, OnlyOneConcurrentRegistrationOfNameSucceeds) {
+  constexpr std::size_t k_thread_count = 8;
+
+  FileMetadataRegistry registry(m_root);
+
+  std::atomic<std::size_t> added{0};
+  std::atomic<std::size_t> rejected{0};
+  std::atomic<std::size_t> failed{0};
+  std::latch start(k_thread_count);
+
+  std::vector<std::thread> threads;
+  threads.reserve(k_thread_count);
+
+  for (std::size_t index = 0; index < k_thread_count; ++index) {
+    threads.emplace_back([&registry, &start, &added, &rejected, &failed, index] {
+      start.arrive_and_wait();
+
+      const auto outcome = registry.add_user(make_user(static_cast<std::uint8_t>(20 + index), "одно-имя"));
+
+      if (!outcome.has_value()) {
+        if (outcome.error() == CoreError::user_name_taken) {
+          ++rejected;
+        } else {
+          ++failed;
+        }
+
+        return;
+      }
+
+      ++added;
+    });
+  }
+
+  for (auto &thread : threads) {
+    thread.join();
+  }
+
+  EXPECT_EQ(failed.load(), 0U);
+  EXPECT_EQ(added.load(), 1U);
+  EXPECT_EQ(rejected.load(), k_thread_count - 1);
 }
 
 } // namespace

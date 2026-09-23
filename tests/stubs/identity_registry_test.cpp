@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <latch>
 #include <string>
 #include <thread>
@@ -132,12 +133,25 @@ TEST_F(IdentityRegistryTest, OnlyOneConcurrentClaimSucceeds) {
 }
 
 TEST_F(IdentityRegistryTest, ReportsStorageFailure) {
-  FileIdentityRegistry registry(m_root / "missing");
+  std::ofstream blocker(m_root / "не-каталог", std::ios::binary);
+  blocker << "файл";
+  blocker.close();
+
+  FileIdentityRegistry registry(m_root / "не-каталог" / "claims");
 
   const auto outcome = registry.claim(make_identity(11));
 
   ASSERT_FALSE(outcome.has_value());
   EXPECT_EQ(outcome.error(), CoreError::storage_failed);
+}
+
+TEST_F(IdentityRegistryTest, CreatesDirectoryForMarkers) {
+  FileIdentityRegistry registry(m_root / "nested" / "claims");
+
+  const auto outcome = registry.claim(make_identity(12));
+
+  ASSERT_TRUE(outcome.has_value());
+  EXPECT_EQ(outcome.value(), ClaimOutcome::claimed);
 }
 
 } // namespace

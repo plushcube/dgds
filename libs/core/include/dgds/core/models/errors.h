@@ -18,7 +18,10 @@ enum class CoreError {
   blob_malformed,
   user_not_found,
   user_name_taken,
+  authorization_failed,
+  not_permitted,
   publication_not_found,
+  content_duplicate,
   purchase_not_found,
   record_exists,
   receipt_version_unsupported,
@@ -30,6 +33,8 @@ enum class CoreError {
   mark_malformed,
   mark_version_unsupported,
   mark_checksum_mismatch,
+  mark_not_found,
+  mark_not_confident,
 };
 
 template <typename Value> using Result = std::expected<Value, CoreError>;

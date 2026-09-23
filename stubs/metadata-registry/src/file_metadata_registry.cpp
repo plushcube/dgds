@@ -2,10 +2,14 @@
 
 #include <dgds/stubs/support/file_storage.h>
 
+#include <openssl/evp.h>
+
 #include "records.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <optional>
 #include <utility>
@@ -56,6 +60,12 @@ template <typename Record, typename Match> std::optional<Record> pick(const std:
   return std::nullopt;
 }
 
+core::CoreError release_marker(const std::filesystem::path &marker, core::CoreError original) {
+  const auto released = remove_file(marker);
+
+  return released.has_value() ? original : released.error();
+}
+
 } // namespace
 
 core::Result<void> FileMetadataRegistry::add_user(const core::UserAccount &account) {
@@ -69,26 +79,47 @@ core::Result<void> FileMetadataRegistry::add_user(const core::UserAccount &accou
     return std::unexpected(core::CoreError::record_exists);
   }
 
-  const auto users = load_all<core::UserAccount>(users_dir(), decode_user);
+  const auto marker = name_path(account.name);
 
-  if (!users.has_value()) {
-    return std::unexpected(users.error());
+  if (!marker.has_value()) {
+    return std::unexpected(marker.error());
   }
 
-  const bool taken = std::any_of(users->begin(), users->end(),
-                                 [&account](const core::UserAccount &user) { return user.name == account.name; });
+  const auto claimed = claim_file(marker.value());
 
-  if (taken) {
+  if (!claimed.has_value()) {
+    return std::unexpected(claimed.error());
+  }
+
+  if (!claimed.value()) {
     return std::unexpected(core::CoreError::user_name_taken);
   }
 
   const auto encoded = encode_user(account);
 
   if (!encoded.has_value()) {
-    return std::unexpected(k_broken_record);
+    return std::unexpected(release_marker(marker.value(), k_broken_record));
   }
 
-  return store_file(user_path(account.user_id), encoded.value());
+  const auto stored = store_file(user_path(account.user_id), encoded.value());
+
+  if (!stored.has_value()) {
+    return std::unexpected(release_marker(marker.value(), stored.error()));
+  }
+
+  return {};
+}
+
+core::Result<std::filesystem::path> FileMetadataRegistry::name_path(core::Content name) const {
+  std::array<std::uint8_t, core::k_identity_size> digest{};
+  unsigned int length = 0;
+
+  if (EVP_Digest(name.data(), name.size(), digest.data(), &length, EVP_sha256(), nullptr) != 1 ||
+      length != digest.size()) {
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
+  return names_dir() / (core::to_hex(digest.data(), digest.size()) + k_name_suffix);
 }
 
 core::Result<core::UserAccount> FileMetadataRegistry::find_user(const core::UserId &user_id) {
@@ -270,25 +301,14 @@ core::Result<std::size_t> FileMetadataRegistry::purchase_count(const core::Publi
   return static_cast<std::size_t>(count);
 }
 
-core::Result<void> FileMetadataRegistry::add_receipt(const core::ReceiptRecord &record) {
-  const auto path = receipt_path(record.receipt.header.purchase_id, record.device_key);
-  const auto present = file_exists(path);
-
-  if (!present.has_value()) {
-    return std::unexpected(present.error());
-  }
-
-  if (present.value()) {
-    return std::unexpected(core::CoreError::record_exists);
-  }
-
+core::Result<void> FileMetadataRegistry::save_receipt(const core::ReceiptRecord &record) {
   const auto encoded = encode_receipt_record(record);
 
   if (!encoded.has_value()) {
     return std::unexpected(k_broken_record);
   }
 
-  return store_file(path, encoded.value());
+  return store_file(receipt_path(record.receipt.header.purchase_id, record.device_key), encoded.value());
 }
 
 core::Result<core::ReceiptRecord> FileMetadataRegistry::find_receipt(const core::PurchaseId &purchase_id,

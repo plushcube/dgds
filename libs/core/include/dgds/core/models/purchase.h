@@ -6,6 +6,7 @@
 #include <dgds/core/models/user.h>
 
 #include <cstdint>
+#include <vector>
 
 namespace dgds::core {
 
@@ -16,7 +17,6 @@ struct PurchaseRecord {
   UserId user_id;
   PublicationId publication_id;
   Timestamp purchased_at;
-  SealedContent wrapped_blob_key;
 };
 
 struct PurchaseSummary {
@@ -24,5 +24,7 @@ struct PurchaseSummary {
   PublicationSummary publication;
   Timestamp purchased_at;
 };
+
+using PurchaseSummaries = std::vector<PurchaseSummary>;
 
 } // namespace dgds::core
