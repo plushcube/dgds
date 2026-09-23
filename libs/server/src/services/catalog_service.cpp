@@ -1,5 +1,6 @@
 #include <dgds/server/services/catalog_service.h>
 
+#include "access.h"
 #include "summaries.h"
 
 #include <expected>
@@ -45,6 +46,17 @@ core::Result<core::AuthorPublicationSummaries> CatalogService::author_publicatio
   }
 
   return summaries;
+}
+
+core::Result<core::ContentIdentity> CatalogService::context_identity(const core::UserId &user_id,
+                                                                     const core::PurchaseId &context_id) {
+  const auto access = resolve_access(user_id, context_id, m_metadata);
+
+  if (!access.has_value()) {
+    return std::unexpected(access.error());
+  }
+
+  return access->publication.identity;
 }
 
 } // namespace dgds::server
