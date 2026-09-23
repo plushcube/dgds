@@ -1,9 +1,11 @@
-add_library(dgds-client INTERFACE)
+add_library(dgds-client STATIC "src/client.cpp")
 add_library(dgds::client ALIAS dgds-client)
 
 target_include_directories(
-  dgds-client INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
-target_link_libraries(dgds-client INTERFACE dgds::core)
+  dgds-client PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+target_link_libraries(dgds-client
+                      PUBLIC dgds::core
+                      PRIVATE dgds::warnings)
 
 if(APPLE)
   add_library(dgds-client-macos STATIC "src/platform/macos/keychain_device_key.cpp")
@@ -16,7 +18,7 @@ if(APPLE)
                         PUBLIC dgds::core "-framework CoreFoundation" "-framework Security"
                         PRIVATE dgds::warnings)
 
-  target_link_libraries(dgds-client INTERFACE dgds-client-macos)
+  target_link_libraries(dgds-client PUBLIC dgds-client-macos)
 endif()
 
 dgds_apply_version(dgds-client client 0.1.0)
