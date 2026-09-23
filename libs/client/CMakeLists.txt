@@ -8,7 +8,8 @@ target_link_libraries(dgds-client
                       PRIVATE dgds::warnings)
 
 if(APPLE)
-  add_library(dgds-client-macos STATIC "src/platform/macos/keychain_device_key.cpp")
+  add_library(dgds-client-macos STATIC "src/platform/macos/keychain_device_key.cpp"
+                                       "src/platform/macos/keychain_receipt_store.cpp")
   add_library(dgds::client::macos ALIAS dgds-client-macos)
 
   target_include_directories(

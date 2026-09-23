@@ -1,7 +1,7 @@
 set(client_tests api_contract_test.cpp client_test.cpp example_run_test.cpp)
 
 if(APPLE)
-  list(APPEND client_tests keychain_device_key_test.cpp)
+  list(APPEND client_tests keychain_device_key_test.cpp keychain_receipt_store_test.cpp)
 endif()
 
 dgds_add_test_area(client ${client_tests})
