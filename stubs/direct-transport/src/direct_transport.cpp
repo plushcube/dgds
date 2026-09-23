@@ -67,6 +67,17 @@ Result<Receipt> DirectTransport::restore_receipt(const Credentials &credentials,
   return m_purchases.restore_receipt(user_id.value(), purchase_id, device_key, m_clock());
 }
 
+Result<core::ContentIdentity> DirectTransport::context_identity(const Credentials &credentials,
+                                                                const core::PurchaseId &context_id) {
+  const auto user_id = authorized(credentials);
+
+  if (!user_id.has_value()) {
+    return std::unexpected(user_id.error());
+  }
+
+  return m_catalog.context_identity(user_id.value(), context_id);
+}
+
 Result<Package> DirectTransport::fetch_package(const Credentials &credentials, const PurchaseId &purchase_id,
                                                const DevicePublicKey &device_key) {
   const auto user_id = authorized(credentials);

@@ -57,6 +57,12 @@ Result<Receipt> ApiClient::stored_receipt(const Credentials &credentials, const 
 }
 
 Result<SecureBuffer> ApiClient::fetch_content(const Credentials &credentials, const PurchaseId &purchase_id) {
+  const auto expected = m_transport.context_identity(credentials, purchase_id);
+
+  if (!expected.has_value()) {
+    return std::unexpected(expected.error());
+  }
+
   const auto device_key = m_device_key.public_key();
 
   if (!device_key.has_value()) {
@@ -79,6 +85,10 @@ Result<SecureBuffer> ApiClient::fetch_content(const Credentials &credentials, co
 
   if (!package.has_value()) {
     return std::unexpected(package.error());
+  }
+
+  if (package->identity != expected.value()) {
+    return std::unexpected(core::CoreError::content_mismatch);
   }
 
   return core::open_package(package.value(), receipt_key.value());

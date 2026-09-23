@@ -57,7 +57,10 @@ protected:
 
   [[nodiscard]] core::Credentials sign_in(std::string_view name) {
     const auto account = m_client.register_user(name);
-    EXPECT_TRUE(account.has_value());
+
+    if (!account.has_value()) {
+      EXPECT_EQ(account.error(), core::CoreError::user_name_taken);
+    }
 
     const auto credentials = m_client.log_in(name);
     EXPECT_TRUE(credentials.has_value());

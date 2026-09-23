@@ -19,6 +19,7 @@ namespace dgds::stubs {
 using client::ApiTransport;
 using client::AuthorPublicKey;
 using client::Content;
+using client::ContentIdentity;
 using client::Credentials;
 using client::DevicePublicKey;
 using client::Package;
@@ -59,6 +60,8 @@ public:
   [[nodiscard]] Result<Receipt> restore_receipt(const Credentials &credentials, const PurchaseId &purchase_id,
                                                 const DevicePublicKey &device_key) override;
 
+  [[nodiscard]] Result<ContentIdentity> context_identity(const Credentials &credentials,
+                                                         const PurchaseId &context_id) override;
   [[nodiscard]] Result<Package> fetch_package(const Credentials &credentials, const PurchaseId &purchase_id,
                                               const DevicePublicKey &device_key) override;
 

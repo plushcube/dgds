@@ -13,6 +13,7 @@ namespace dgds::client {
 
 using core::AuthorPublicKey;
 using core::Content;
+using core::ContentIdentity;
 using core::Credentials;
 using core::DevicePublicKey;
 using core::Package;
@@ -48,6 +49,8 @@ public:
   [[nodiscard]] virtual Result<PurchaseSummaries> purchases(const Credentials &credentials) = 0;
   [[nodiscard]] virtual Result<Receipt> restore_receipt(const Credentials &credentials, const PurchaseId &purchase_id,
                                                         const DevicePublicKey &device_key) = 0;
+  [[nodiscard]] virtual Result<ContentIdentity> context_identity(const Credentials &credentials,
+                                                                 const PurchaseId &context_id) = 0;
   [[nodiscard]] virtual Result<Package> fetch_package(const Credentials &credentials, const PurchaseId &purchase_id,
                                                       const DevicePublicKey &device_key) = 0;
 };
