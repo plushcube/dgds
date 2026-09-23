@@ -73,7 +73,7 @@ Result<Signature> sign_content(Content text, Content author_name, const AuthorPr
 std::string markable_text() {
   std::string text;
 
-  for (std::size_t line = 0; line < 5; ++line) {
+  for (std::size_t line = 0; line < 10; ++line) {
     text += "line " + std::to_string(line) + " of the published text\n";
   }
 

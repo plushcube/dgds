@@ -15,6 +15,7 @@ namespace {
 using dgds::core::CanonicalForm;
 using dgds::core::Content;
 using dgds::core::content_identity;
+using dgds::core::CoreError;
 using dgds::core::embed_mark;
 using dgds::core::has_mark_channel;
 using dgds::core::k_mark_bit_count;
@@ -121,6 +122,109 @@ TEST(MarkChannel, ReportsMissingChannel) {
 
   EXPECT_TRUE(has_mark_channel(enough_text));
   EXPECT_TRUE(embed_mark(enough_text, make_mark(1)).has_value());
+}
+
+TEST(MarkChannel, ReadsMarkFromUnalignedExcerpt) {
+  const std::string text = long_text(30);
+  const Mark mark = make_mark(31337);
+
+  const auto marked = embed_mark(text, mark);
+  ASSERT_TRUE(marked.has_value());
+
+  const std::size_t offset = offset_of_significant(marked.value(), 37);
+  const auto excerpt = read_mark(Content(marked->data() + offset, marked->size() - offset));
+
+  ASSERT_TRUE(excerpt.has_value());
+  EXPECT_EQ(excerpt.value(), mark);
+}
+
+TEST(MarkChannel, SurvivesPartialTruncation) {
+  const std::string text = long_text(30);
+  const Mark mark = make_mark(5);
+
+  const auto marked = embed_mark(text, mark);
+  ASSERT_TRUE(marked.has_value());
+
+  const std::size_t cut = offset_of_significant(marked.value(), k_mark_bit_count * 3);
+  const auto truncated = read_mark(Content(marked->data(), cut));
+
+  ASSERT_TRUE(truncated.has_value());
+  EXPECT_EQ(truncated.value(), mark);
+}
+
+TEST(MarkChannel, ToleratesDamageWhileOccurrencesRemain) {
+  const std::string text = long_text(30);
+  const Mark mark = make_mark(777);
+
+  const auto marked = embed_mark(text, mark);
+  ASSERT_TRUE(marked.has_value());
+
+  std::string damaged = marked.value();
+  const std::size_t last = damaged.rfind(k_mark_bytes);
+  ASSERT_NE(last, std::string::npos);
+  damaged.erase(last, k_mark_bytes.size());
+
+  const auto read = read_mark(damaged);
+
+  ASSERT_TRUE(read.has_value());
+  EXPECT_EQ(read.value(), mark);
+}
+
+TEST(MarkChannel, RequiresEnoughOccurrences) {
+  const std::string text(k_mark_bit_count, 'x');
+
+  const auto marked = embed_mark(text, make_mark(11));
+  ASSERT_TRUE(marked.has_value());
+
+  const auto read = read_mark(marked.value());
+
+  ASSERT_FALSE(read.has_value());
+  EXPECT_EQ(read.error(), CoreError::mark_not_confident);
+}
+
+TEST(MarkChannel, RejectsDamagedMark) {
+  const std::string text(k_mark_bit_count + 8, 'x');
+
+  const auto marked = embed_mark(text, make_mark(12));
+  ASSERT_TRUE(marked.has_value());
+
+  std::string damaged = marked.value();
+  const std::size_t first = damaged.find(k_mark_bytes);
+  ASSERT_NE(first, std::string::npos);
+  damaged.erase(first, k_mark_bytes.size());
+
+  const auto read = read_mark(damaged);
+
+  ASSERT_FALSE(read.has_value());
+  EXPECT_EQ(read.error(), CoreError::mark_malformed);
+}
+
+TEST(MarkChannel, ReportsAbsentMark) {
+  const std::string text = long_text(20);
+
+  const auto read = read_mark(text);
+
+  ASSERT_FALSE(read.has_value());
+  EXPECT_EQ(read.error(), CoreError::mark_not_found);
+}
+
+TEST(MarkChannel, RejectsConflictingOccurrences) {
+  const std::string text = long_text(30);
+
+  const auto first = embed_mark(text, make_mark(1));
+  const auto second = embed_mark(text, make_mark(2));
+  ASSERT_TRUE(first.has_value());
+  ASSERT_TRUE(second.has_value());
+
+  const std::size_t cut_first = offset_of_significant(first.value(), k_mark_bit_count * 4);
+  const std::size_t cut_second = offset_of_significant(second.value(), k_mark_bit_count * 4);
+
+  const std::string spliced = first->substr(0, cut_first) + second->substr(cut_second);
+
+  const auto read = read_mark(spliced);
+
+  ASSERT_FALSE(read.has_value());
+  EXPECT_EQ(read.error(), CoreError::mark_not_confident);
 }
 
 } // namespace

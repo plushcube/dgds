@@ -33,6 +33,8 @@ enum class CoreError {
   mark_malformed,
   mark_version_unsupported,
   mark_checksum_mismatch,
+  mark_not_found,
+  mark_not_confident,
 };
 
 template <typename Value> using Result = std::expected<Value, CoreError>;
