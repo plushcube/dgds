@@ -19,9 +19,8 @@ SecureBuffer::SecureBuffer(SecureBuffer &&other) noexcept : m_data(std::move(oth
 SecureBuffer &SecureBuffer::operator=(SecureBuffer &&other) noexcept {
   if (this != &other) {
     release();
-    m_data = std::move(other.m_data);
+    m_data.swap(other.m_data);
     protect();
-    other.release();
   }
 
   return *this;
@@ -30,8 +29,8 @@ SecureBuffer &SecureBuffer::operator=(SecureBuffer &&other) noexcept {
 SecureBuffer::~SecureBuffer() { release(); }
 
 void SecureBuffer::wipe() {
-  if (!m_data.empty()) {
-    OPENSSL_cleanse(m_data.data(), m_data.size());
+  if (m_data.capacity() > 0) {
+    OPENSSL_cleanse(m_data.data(), m_data.capacity());
   }
 }
 
