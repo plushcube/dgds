@@ -1,24 +1,15 @@
 #include <dgds/client/client.h>
-#include <dgds/server/services/catalog_service.h>
-#include <dgds/server/services/delivery_service.h>
-#include <dgds/server/services/publication_service.h>
-#include <dgds/server/services/purchase_service.h>
-#include <dgds/server/services/session_store.h>
-#include <dgds/server/services/user_service.h>
-#include <dgds/stubs/blob_store/file_blob_store.h>
+#include <dgds/client/http/http_transport.h>
 #include <dgds/stubs/device_key/file_device_key.h>
-#include <dgds/stubs/direct_transport/direct_transport.h>
-#include <dgds/stubs/identity_registry/file_identity_registry.h>
-#include <dgds/stubs/key_store/file_key_store.h>
-#include <dgds/stubs/metadata_registry/file_metadata_registry.h>
 #include <dgds/stubs/receipt_store/file_receipt_store.h>
 
 #include <dgds/core/identity/content_identity.h>
-#include <dgds/core/models/timestamp.h>
+#include <dgds/core/models/errors.h>
+#include <dgds/core/models/protocol.h>
 #include <dgds/core/signature/author_signature.h>
 #include <dgds/version.h>
 
-#include <chrono>
+#include <charconv>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -27,6 +18,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unistd.h>
 
 namespace {
@@ -35,6 +27,8 @@ constexpr std::string_view k_author = "автор";
 constexpr std::string_view k_buyer = "покупатель";
 constexpr std::string_view k_title = "Демонстрационная публикация";
 constexpr std::string_view k_file_name = "текст.txt";
+constexpr const char *k_default_host = "127.0.0.1";
+constexpr int k_default_port = 8443;
 
 enum class Command {
   run,
@@ -43,24 +37,42 @@ enum class Command {
   invalid,
 };
 
-std::filesystem::path default_root() {
-  return std::filesystem::temp_directory_path() / ("dgds-example-" + std::to_string(::getpid()));
+std::filesystem::path default_device_root() {
+  return std::filesystem::temp_directory_path() / ("dgds-device-" + std::to_string(::getpid()));
 }
 
 struct Options {
   Command command = Command::run;
-  std::filesystem::path root = default_root();
+  std::string host = k_default_host;
+  int port = k_default_port;
+  std::filesystem::path certificate;
+  std::filesystem::path device = default_device_root();
   std::optional<std::filesystem::path> text;
 };
 
 void print_usage(std::ostream &out) {
-  out << "dgds-example [--root <путь>] [--text <файл>]\n"
-      << "     --root   каталог стенда: сервер в <root>/server, устройство в <root>/device;\n"
-      << "               стенд создаётся один раз, повторный запуск в занятом каталоге не предусмотрен;\n"
-      << "               по умолчанию " << default_root().string() << "\n"
-      << "     --text   файл для публикации, по умолчанию встроенный образец\n"
-      << "     --version  версия продукта\n"
-      << "     --help   эта справка\n";
+  out << "dgds-example [--certificate <файл>] [--host <адрес>] [--port <номер>] [--device <каталог>] [--text <файл>]\n"
+      << "     --certificate  сертификат сервера: им проверяется и закрепляется соединение, обязателен\n"
+      << "     --host         адрес сервера, по умолчанию " << k_default_host << "\n"
+      << "     --port         порт сервера, по умолчанию " << k_default_port << "\n"
+      << "     --device       каталог устройства: ключ и квитанции, по умолчанию " << default_device_root().string()
+      << "\n"
+      << "     --text         файл для публикации, по умолчанию встроенный образец\n"
+      << "     --version      версия продукта\n"
+      << "     --help         эта справка\n";
+}
+
+std::optional<int> number_of(std::string_view text) {
+  int value = 0;
+  const char *begin = text.data();
+  const char *end = begin + text.size();
+  const std::from_chars_result parsed = std::from_chars(begin, end, value);
+
+  if (parsed.ec != std::errc() || parsed.ptr != end) {
+    return std::nullopt;
+  }
+
+  return value;
 }
 
 Options parse_arguments(int argc, char *argv[]) {
@@ -79,13 +91,42 @@ Options parse_arguments(int argc, char *argv[]) {
       return options;
     }
 
-    if (argument == "--root" && index + 1 < argc) {
-      options.root = argv[++index];
+    if (index + 1 >= argc) {
+      options.command = Command::invalid;
+      return options;
+    }
+
+    const std::string value = argv[++index];
+
+    if (argument == "--host") {
+      options.host = value;
       continue;
     }
 
-    if (argument == "--text" && index + 1 < argc) {
-      options.text = argv[++index];
+    if (argument == "--port") {
+      const std::optional<int> port = number_of(value);
+
+      if (!port.has_value() || port.value() <= 0 || port.value() > 65535) {
+        options.command = Command::invalid;
+        return options;
+      }
+
+      options.port = port.value();
+      continue;
+    }
+
+    if (argument == "--certificate") {
+      options.certificate = value;
+      continue;
+    }
+
+    if (argument == "--device") {
+      options.device = value;
+      continue;
+    }
+
+    if (argument == "--text") {
+      options.text = value;
       continue;
     }
 
@@ -93,11 +134,11 @@ Options parse_arguments(int argc, char *argv[]) {
     return options;
   }
 
-  return options;
-}
+  if (options.command == Command::run && options.certificate.empty()) {
+    options.command = Command::invalid;
+  }
 
-dgds::core::Timestamp wall_clock() {
-  return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+  return options;
 }
 
 std::string sample_text() {
@@ -122,8 +163,8 @@ std::string published_text(const Options &options) {
   return buffer.str();
 }
 
-int report(std::string_view what) {
-  std::cerr << "Не удалось выполнить: " << what << '\n';
+int report(std::string_view what, dgds::core::CoreError error) {
+  std::cerr << "Не удалось выполнить: " << what << " (" << dgds::core::code_of(error) << ")\n";
   return 1;
 }
 
@@ -147,49 +188,48 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  const std::filesystem::path server_root = options.root / "server";
-  const std::filesystem::path device_root = options.root / "device";
+  const auto trust = dgds::client::load_server_trust(options.certificate);
 
-  dgds::stubs::FileIdentityRegistry identities{server_root / "identities"};
-  dgds::stubs::FileKeyStore keys{server_root / "master.key", server_root / "keys"};
-  dgds::stubs::FileBlobStore blobs{server_root / "blobs"};
-  dgds::stubs::FileMetadataRegistry metadata{server_root / "metadata"};
-  dgds::server::SessionStore sessions;
-  dgds::server::UserService users{metadata, sessions};
-  dgds::server::CatalogService catalog{metadata};
-  dgds::server::PublicationService publications{identities, keys, blobs, metadata};
-  dgds::server::PurchaseService purchases{keys, metadata};
-  dgds::server::DeliveryService delivery{blobs, keys, metadata};
-  dgds::stubs::DirectTransport transport{users, sessions, catalog, publications, purchases, delivery, wall_clock};
+  if (!trust.has_value()) {
+    return report("доверие сертификату сервера", trust.error());
+  }
 
-  dgds::stubs::FileDeviceKey device_key{device_root / "device.key"};
-  dgds::stubs::FileReceiptStore receipts{device_root / "receipts"};
+  dgds::client::HttpTransport transport{{.host = options.host, .port = options.port}, trust.value()};
+  dgds::stubs::FileDeviceKey device_key{options.device / "device.key"};
+  dgds::stubs::FileReceiptStore receipts{options.device / "receipts"};
   dgds::client::ApiClient client{transport, device_key, receipts};
+
+  std::cout << "Сервер      " << options.host << ':' << options.port << "\n"
+            << "Закрепление " << trust->pin.to_hex() << '\n';
 
   const auto author = client.register_user(k_author);
 
   if (!author.has_value()) {
-    return report("регистрацию автора");
+    return report("регистрацию автора", author.error());
   }
 
   const auto author_credentials = client.log_in(k_author);
 
   if (!author_credentials.has_value()) {
-    return report("вход автора");
+    return report("вход автора", author_credentials.error());
   }
 
   const std::string text = published_text(options);
   const auto author_keys = dgds::core::generate_author_key();
   const auto identity = dgds::core::content_identity(text);
 
-  if (!author_keys.has_value() || !identity.has_value()) {
-    return report("подготовку ключа автора");
+  if (!author_keys.has_value()) {
+    return report("ключ автора", author_keys.error());
+  }
+
+  if (!identity.has_value()) {
+    return report("идентичность контента", identity.error());
   }
 
   const auto signature = dgds::core::sign_author(identity.value(), author->name, author_keys->private_key);
 
   if (!signature.has_value()) {
-    return report("подпись контента");
+    return report("подпись контента", signature.error());
   }
 
   const dgds::core::PublicationDraft draft{
@@ -198,35 +238,48 @@ int main(int argc, char *argv[]) {
       client.publish(author_credentials.value(), draft, author_keys->public_key, signature.value());
 
   if (!publication.has_value()) {
-    return report("публикацию");
+    return report("публикацию", publication.error());
   }
 
-  std::cout << "Публикация  " << publication.value() << " «" << k_title << "»\n";
+  std::cout << "Публикация  " << publication.value() << " «" << k_title << "» автором «" << k_author << "»\n";
+
+  const auto catalog = client.catalog();
+
+  if (!catalog.has_value()) {
+    return report("просмотр каталога", catalog.error());
+  }
+
+  std::cout << "Каталог     " << catalog->size() << " публикаций:\n";
+
+  for (const auto &summary : catalog.value()) {
+    std::cout << "            " << summary.publication_id << " «" << summary.title << "» " << summary.author_name
+              << ", " << summary.size << " байт\n";
+  }
 
   const auto buyer = client.register_user(k_buyer);
 
   if (!buyer.has_value()) {
-    return report("регистрацию покупателя");
+    return report("регистрацию покупателя", buyer.error());
   }
 
   const auto buyer_credentials = client.log_in(k_buyer);
 
   if (!buyer_credentials.has_value()) {
-    return report("вход покупателя");
+    return report("вход покупателя", buyer_credentials.error());
   }
 
   const auto purchased = client.buy(buyer_credentials.value(), publication.value());
 
   if (!purchased.has_value()) {
-    return report("покупку");
+    return report("покупку", purchased.error());
   }
 
-  std::cout << "Покупка    " << purchased->header.purchase_id << " покупателем «" << k_buyer << "»\n";
+  std::cout << "Покупка     " << purchased->header.purchase_id << " покупателем «" << k_buyer << "»\n";
 
   const auto content = client.fetch_content(buyer_credentials.value(), purchased->header.purchase_id);
 
   if (!content.has_value()) {
-    return report("получение контента");
+    return report("получение контента", content.error());
   }
 
   std::cout << "=== потребитель выводит полученный контент ===\n";
