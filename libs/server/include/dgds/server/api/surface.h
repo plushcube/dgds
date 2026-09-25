@@ -10,6 +10,7 @@
 #include <dgds/server/services/user_service.h>
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -38,6 +39,8 @@ public:
   [[nodiscard]] static std::string unknown_operation();
 
 private:
+  [[nodiscard]] std::optional<std::string> version_failure(core::Content body);
+
   [[nodiscard]] core::Result<core::UserId> authorized(const core::Credentials &credentials);
 
   UserService &m_users;

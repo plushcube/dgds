@@ -1,9 +1,11 @@
 #include <dgds/server/api/surface.h>
 
+#include <dgds/core/models/protocol.h>
 #include <dgds/server/api/codec.h>
 #include <dgds/server/api/response.h>
 
 #include <expected>
+#include <optional>
 #include <string>
 
 namespace dgds::server::api {
@@ -12,6 +14,20 @@ namespace {
 constexpr const char *k_malformed = "request_malformed";
 
 } // namespace
+
+std::optional<std::string> Surface::version_failure(core::Content body) {
+  const auto version = read_version(body);
+
+  if (!version.has_value()) {
+    return std::string(k_malformed);
+  }
+
+  if (version.value() != core::k_protocol_version) {
+    return std::string("protocol_version_unsupported");
+  }
+
+  return std::nullopt;
+}
 
 core::Result<core::UserId> Surface::authorized(const core::Credentials &credentials) {
   const auto user_id = m_sessions.resolve(credentials.token);
@@ -30,6 +46,10 @@ core::Result<core::UserId> Surface::authorized(const core::Credentials &credenti
 std::string Surface::unknown_operation() { return failure("operation_unknown"); }
 
 std::string Surface::register_user(core::Content body) {
+  if (const auto failure_code = version_failure(body); failure_code.has_value()) {
+    return failure(failure_code.value());
+  }
+
   const auto name = read_name(body);
 
   if (!name.has_value()) {
@@ -46,6 +66,10 @@ std::string Surface::register_user(core::Content body) {
 }
 
 std::string Surface::log_in(core::Content body) {
+  if (const auto failure_code = version_failure(body); failure_code.has_value()) {
+    return failure(failure_code.value());
+  }
+
   const auto name = read_name(body);
 
   if (!name.has_value()) {
@@ -62,7 +86,9 @@ std::string Surface::log_in(core::Content body) {
 }
 
 std::string Surface::catalog(core::Content body) {
-  (void)body;
+  if (const auto failure_code = version_failure(body); failure_code.has_value()) {
+    return failure(failure_code.value());
+  }
 
   const auto summaries = m_catalog.catalog();
 
@@ -74,6 +100,10 @@ std::string Surface::catalog(core::Content body) {
 }
 
 std::string Surface::publish(core::Content body) {
+  if (const auto failure_code = version_failure(body); failure_code.has_value()) {
+    return failure(failure_code.value());
+  }
+
   const auto credentials = read_credentials(body);
   const auto draft = read_draft(body);
   const auto author_key = read_author_key(body);
@@ -100,6 +130,10 @@ std::string Surface::publish(core::Content body) {
 }
 
 std::string Surface::author_publications(core::Content body) {
+  if (const auto failure_code = version_failure(body); failure_code.has_value()) {
+    return failure(failure_code.value());
+  }
+
   const auto credentials = read_credentials(body);
 
   if (!credentials.has_value()) {
@@ -122,6 +156,10 @@ std::string Surface::author_publications(core::Content body) {
 }
 
 std::string Surface::buy(core::Content body) {
+  if (const auto failure_code = version_failure(body); failure_code.has_value()) {
+    return failure(failure_code.value());
+  }
+
   const auto credentials = read_credentials(body);
   const auto publication_id = read_publication_id(body);
   const auto device_key = read_device_key(body);
@@ -146,6 +184,10 @@ std::string Surface::buy(core::Content body) {
 }
 
 std::string Surface::purchases(core::Content body) {
+  if (const auto failure_code = version_failure(body); failure_code.has_value()) {
+    return failure(failure_code.value());
+  }
+
   const auto credentials = read_credentials(body);
 
   if (!credentials.has_value()) {
@@ -168,6 +210,10 @@ std::string Surface::purchases(core::Content body) {
 }
 
 std::string Surface::restore_receipt(core::Content body) {
+  if (const auto failure_code = version_failure(body); failure_code.has_value()) {
+    return failure(failure_code.value());
+  }
+
   const auto credentials = read_credentials(body);
   const auto purchase_id = read_purchase_id(body);
   const auto device_key = read_device_key(body);
@@ -192,6 +238,10 @@ std::string Surface::restore_receipt(core::Content body) {
 }
 
 std::string Surface::context_identity(core::Content body) {
+  if (const auto failure_code = version_failure(body); failure_code.has_value()) {
+    return failure(failure_code.value());
+  }
+
   const auto credentials = read_credentials(body);
   const auto context_id = read_context_id(body);
 
@@ -215,6 +265,10 @@ std::string Surface::context_identity(core::Content body) {
 }
 
 std::string Surface::fetch_package(core::Content body) {
+  if (const auto failure_code = version_failure(body); failure_code.has_value()) {
+    return failure(failure_code.value());
+  }
+
   const auto credentials = read_credentials(body);
   const auto purchase_id = read_purchase_id(body);
   const auto device_key = read_device_key(body);

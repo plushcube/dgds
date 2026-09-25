@@ -10,11 +10,13 @@
 #include <dgds/core/models/purchase.h>
 #include <dgds/core/models/user.h>
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
 namespace dgds::server::api {
 
+[[nodiscard]] std::optional<std::uint8_t> read_version(core::Content body);
 [[nodiscard]] std::optional<core::Credentials> read_credentials(core::Content body);
 [[nodiscard]] std::optional<core::ContentBuffer> read_name(core::Content body);
 [[nodiscard]] std::optional<core::PublicationDraft> read_draft(core::Content body);

@@ -12,6 +12,7 @@
 #include <dgds/core/identity/canonical_form.h>
 #include <dgds/core/identity/content_identity.h>
 #include <dgds/core/identity/user_id.h>
+#include <dgds/core/models/protocol.h>
 #include <dgds/core/signature/author_signature.h>
 #include <dgds/stubs/blob_store/file_blob_store.h>
 #include <dgds/stubs/identity_registry/file_identity_registry.h>
@@ -152,18 +153,26 @@ protected:
   [[nodiscard]] Json response_of(const std::string &wire) {
     const Json parsed = Json::parse(wire);
     EXPECT_TRUE(parsed.contains("data") || parsed.contains("error"));
+    EXPECT_EQ(parsed.at("version").get<std::uint8_t>(), dgds::core::k_protocol_version);
 
     return parsed;
   }
 
+  [[nodiscard]] std::string request_of(const Json &payload) const {
+    Json body = payload;
+    body["version"] = dgds::core::k_protocol_version;
+
+    return body.dump();
+  }
+
   [[nodiscard]] std::string account_of(std::string_view name) {
-    return response_of(m_surface.register_user(Json{{"name", name}}.dump())).at("data").dump();
+    return response_of(m_surface.register_user(request_of(Json{{"name", name}}))).at("data").dump();
   }
 
   [[nodiscard]] std::string credentials_of(const std::string &account) {
     const Json parsed = Json::parse(account);
 
-    return response_of(m_surface.log_in(Json{{"name", parsed.at("name")}}.dump())).at("data").dump();
+    return response_of(m_surface.log_in(request_of(Json{{"name", parsed.at("name")}}))).at("data").dump();
   }
 
   std::filesystem::path m_root;
@@ -212,12 +221,12 @@ TEST_F(SurfaceTest, RunsScenarioAcrossEveryOperation) {
       {"author_key", to_hex(keys->public_key.data(), keys->public_key.size())},
       {"signature", to_hex(signature->data(), signature->size())}};
 
-  const auto published = response_of(m_surface.publish(publication_request.dump()));
+  const auto published = response_of(m_surface.publish(request_of(publication_request)));
   ASSERT_TRUE(published.contains("data")) << published.dump();
 
   const std::string publication_id = published.at("data").get<std::string>();
 
-  const auto catalog = response_of(m_surface.catalog("{}"));
+  const auto catalog = response_of(m_surface.catalog(request_of(Json::object())));
 
   ASSERT_TRUE(catalog.contains("data")) << catalog.dump();
   ASSERT_EQ(catalog.at("data").size(), 1U);
@@ -228,7 +237,7 @@ TEST_F(SurfaceTest, RunsScenarioAcrossEveryOperation) {
   EXPECT_FALSE(catalog.at("data").at(0).contains("identity"));
 
   const auto mine =
-      response_of(m_surface.author_publications(Json{{"credentials", Json::parse(author_credentials)}}.dump()));
+      response_of(m_surface.author_publications(request_of(Json{{"credentials", Json::parse(author_credentials)}})));
 
   ASSERT_TRUE(mine.contains("data")) << mine.dump();
   ASSERT_EQ(mine.at("data").size(), 1U);
@@ -239,18 +248,18 @@ TEST_F(SurfaceTest, RunsScenarioAcrossEveryOperation) {
   ASSERT_TRUE(device.has_value());
   ASSERT_TRUE(other_device.has_value());
 
-  const auto receipt =
-      response_of(m_surface.buy(Json{{"credentials", Json::parse(buyer_credentials)},
-                                     {"publication_id", publication_id},
-                                     {"device_key", to_hex(device->public_key.data(), device->public_key.size())}}
-                                    .dump()));
+  const auto receipt = response_of(
+      m_surface.buy(request_of(Json{{"credentials", Json::parse(buyer_credentials)},
+                                    {"publication_id", publication_id},
+                                    {"device_key", to_hex(device->public_key.data(), device->public_key.size())}})));
 
   ASSERT_TRUE(receipt.contains("data")) << receipt.dump();
 
   const std::string purchase_id = receipt.at("data").at("header").at("purchase_id").get<std::string>();
   EXPECT_EQ(receipt.at("data").at("header").at("purchased_at").get<dgds::core::Timestamp>(), m_now);
 
-  const auto purchased = response_of(m_surface.purchases(Json{{"credentials", Json::parse(buyer_credentials)}}.dump()));
+  const auto purchased =
+      response_of(m_surface.purchases(request_of(Json{{"credentials", Json::parse(buyer_credentials)}})));
 
   ASSERT_TRUE(purchased.contains("data")) << purchased.dump();
   ASSERT_EQ(purchased.at("data").size(), 1U);
@@ -259,27 +268,25 @@ TEST_F(SurfaceTest, RunsScenarioAcrossEveryOperation) {
 
   m_now += 10;
 
-  const auto restored = response_of(m_surface.restore_receipt(Json{
-      {"credentials", Json::parse(buyer_credentials)},
-      {"purchase_id", purchase_id},
-      {"device_key", to_hex(other_device->public_key.data(),
-                            other_device->public_key.size())}}.dump()));
+  const auto restored = response_of(m_surface.restore_receipt(
+      request_of(Json{{"credentials", Json::parse(buyer_credentials)},
+                      {"purchase_id", purchase_id},
+                      {"device_key", to_hex(other_device->public_key.data(), other_device->public_key.size())}})));
 
   ASSERT_TRUE(restored.contains("data")) << restored.dump();
   EXPECT_EQ(restored.at("data").at("header").at("purchase_id").get<std::string>(), purchase_id);
   EXPECT_EQ(restored.at("data").at("header").at("issued_at").get<dgds::core::Timestamp>(), m_now);
 
   const auto expected = response_of(m_surface.context_identity(
-      Json{{"credentials", Json::parse(buyer_credentials)}, {"context_id", purchase_id}}.dump()));
+      request_of(Json{{"credentials", Json::parse(buyer_credentials)}, {"context_id", purchase_id}})));
 
   ASSERT_TRUE(expected.contains("data")) << expected.dump();
   EXPECT_EQ(expected.at("data").get<std::string>(), to_hex(identity.value()));
 
-  const auto fetched = response_of(m_surface.fetch_package(Json{
-      {"credentials", Json::parse(buyer_credentials)},
-      {"purchase_id", purchase_id},
-      {"device_key", to_hex(device->public_key.data(),
-                            device->public_key.size())}}.dump()));
+  const auto fetched = response_of(m_surface.fetch_package(
+      request_of(Json{{"credentials", Json::parse(buyer_credentials)},
+                      {"purchase_id", purchase_id},
+                      {"device_key", to_hex(device->public_key.data(), device->public_key.size())}})));
 
   ASSERT_TRUE(fetched.contains("data")) << fetched.dump();
 
@@ -308,6 +315,23 @@ TEST_F(SurfaceTest, ReportsMalformedRequestAndUnknownOperation) {
   const auto unknown = response_of(Surface::unknown_operation());
   ASSERT_TRUE(unknown.contains("error")) << unknown.dump();
   EXPECT_EQ(unknown.at("error").at("code").get<std::string>(), "operation_unknown");
+}
+
+TEST_F(SurfaceTest, RefusesUnsupportedProtocolVersion) {
+  const auto unsupported = response_of(m_surface.register_user(Json{{"name", "автор"}, {"version", 99}}.dump()));
+
+  ASSERT_TRUE(unsupported.contains("error")) << unsupported.dump();
+  EXPECT_EQ(unsupported.at("error").at("code").get<std::string>(), "protocol_version_unsupported");
+
+  const auto missing = response_of(m_surface.register_user(R"({"name": "автор"})"));
+
+  ASSERT_TRUE(missing.contains("error")) << missing.dump();
+  EXPECT_EQ(missing.at("error").at("code").get<std::string>(), "request_malformed");
+
+  const auto accepted = response_of(m_surface.register_user(request_of(Json{{"name", "автор"}})));
+
+  ASSERT_TRUE(accepted.contains("data")) << accepted.dump();
+  EXPECT_EQ(accepted.at("data").at("name").get<std::string>(), "автор");
 }
 
 } // namespace

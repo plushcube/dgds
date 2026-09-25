@@ -2,6 +2,7 @@
 
 #include <dgds/core/identity/content_identity.h>
 #include <dgds/core/identity/user_id.h>
+#include <dgds/core/models/protocol.h>
 
 #include <nlohmann/json.hpp>
 
@@ -129,6 +130,28 @@ Json package_json(const core::Package &value) {
 }
 
 } // namespace
+
+std::optional<std::uint8_t> read_version(core::Content body) {
+  const auto parsed = parse(body);
+
+  if (!parsed.has_value()) {
+    return std::nullopt;
+  }
+
+  const auto found = parsed->find("version");
+
+  if (found == parsed->end() || !found->is_number_unsigned()) {
+    return std::nullopt;
+  }
+
+  const std::uint64_t value = found->get<std::uint64_t>();
+
+  if (value > 255) {
+    return std::nullopt;
+  }
+
+  return static_cast<std::uint8_t>(value);
+}
 
 std::optional<core::Credentials> read_credentials(core::Content body) {
   const auto parsed = parse(body);
