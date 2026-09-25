@@ -10,6 +10,16 @@
 #include <expected>
 
 namespace dgds::server {
+namespace {
+
+core::CoreError release_claim(core::IdentityRegistry &identities, const core::ContentIdentity &identity,
+                              core::CoreError original) {
+  const auto released = identities.release(identity);
+
+  return released.has_value() ? original : released.error();
+}
+
+} // namespace
 
 core::Result<core::PublicationRecord> PublicationService::publish(const core::UserId &author_id,
                                                                   const core::PublicationDraft &draft,
@@ -58,19 +68,19 @@ core::Result<core::PublicationRecord> PublicationService::publish(const core::Us
   const auto sealed = m_keys.seal(identity.value(), plaintext, core::as_content(identity.value()));
 
   if (!sealed.has_value()) {
-    return std::unexpected(sealed.error());
+    return std::unexpected(release_claim(m_identities, identity.value(), sealed.error()));
   }
 
   const auto stored = m_blobs.store(identity.value(), sealed.value());
 
   if (!stored.has_value()) {
-    return std::unexpected(stored.error());
+    return std::unexpected(release_claim(m_identities, identity.value(), stored.error()));
   }
 
   const auto publication_id = core::generate_identifier();
 
   if (!publication_id.has_value()) {
-    return std::unexpected(publication_id.error());
+    return std::unexpected(release_claim(m_identities, identity.value(), publication_id.error()));
   }
 
   const core::PublicationRecord publication{.publication_id = publication_id.value(),
@@ -88,7 +98,7 @@ core::Result<core::PublicationRecord> PublicationService::publish(const core::Us
   const auto registered = m_metadata.add_publication(publication);
 
   if (!registered.has_value()) {
-    return std::unexpected(registered.error());
+    return std::unexpected(release_claim(m_identities, identity.value(), registered.error()));
   }
 
   return publication;

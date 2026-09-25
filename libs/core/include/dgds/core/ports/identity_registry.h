@@ -15,6 +15,7 @@ public:
   virtual ~IdentityRegistry() = default;
 
   [[nodiscard]] virtual Result<ClaimOutcome> claim(const ContentIdentity &identity) = 0;
+  [[nodiscard]] virtual Result<void> release(const ContentIdentity &identity) = 0;
 };
 
 } // namespace dgds::core

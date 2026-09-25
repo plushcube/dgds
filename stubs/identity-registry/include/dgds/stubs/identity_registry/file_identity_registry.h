@@ -12,6 +12,7 @@ public:
   explicit FileIdentityRegistry(std::filesystem::path root) : m_root(std::move(root)) {}
 
   [[nodiscard]] core::Result<core::ClaimOutcome> claim(const core::ContentIdentity &identity) override;
+  [[nodiscard]] core::Result<void> release(const core::ContentIdentity &identity) override;
 
 private:
   std::filesystem::path m_root;

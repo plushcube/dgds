@@ -22,4 +22,8 @@ core::Result<core::ClaimOutcome> FileIdentityRegistry::claim(const core::Content
   return claimed.value() ? core::ClaimOutcome::claimed : core::ClaimOutcome::already_claimed;
 }
 
+core::Result<void> FileIdentityRegistry::release(const core::ContentIdentity &identity) {
+  return remove_file(m_root / (core::to_hex(identity) + k_claim_suffix));
+}
+
 } // namespace dgds::stubs
