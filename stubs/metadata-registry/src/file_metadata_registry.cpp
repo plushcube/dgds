@@ -214,14 +214,25 @@ core::Result<void> FileMetadataRegistry::add_purchase(const core::PurchaseRecord
     return std::unexpected(k_broken_record);
   }
 
+  const std::filesystem::path marker = pair_path(purchase.user_id, purchase.publication_id);
+  const auto claimed = store_file_if_absent(marker, std::to_string(purchase.purchase_id));
+
+  if (!claimed.has_value()) {
+    return std::unexpected(claimed.error());
+  }
+
+  if (!claimed.value()) {
+    return std::unexpected(core::CoreError::record_exists);
+  }
+
   const auto stored = store_file_if_absent(purchase_path(purchase.purchase_id), encoded.value());
 
   if (!stored.has_value()) {
-    return std::unexpected(stored.error());
+    return std::unexpected(release_marker(marker, stored.error()));
   }
 
   if (!stored.value()) {
-    return std::unexpected(core::CoreError::record_exists);
+    return std::unexpected(release_marker(marker, core::CoreError::record_exists));
   }
 
   return {};

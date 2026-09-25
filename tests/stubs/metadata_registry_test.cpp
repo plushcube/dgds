@@ -256,6 +256,53 @@ TEST_F(MetadataRegistryTest, KeepsPurchaseOfUserAndPublication) {
   EXPECT_EQ(by_id->publication_id, purchase.publication_id);
 }
 
+TEST_F(MetadataRegistryTest, RejectsSecondPurchaseOfSamePair) {
+  const UserAccount account = make_user(12, "покупатель");
+
+  ASSERT_TRUE(make_registry().add_user(account).has_value());
+  ASSERT_TRUE(make_registry().add_purchase(make_purchase(51, account.user_id, 61)).has_value());
+
+  const auto second = make_registry().add_purchase(make_purchase(52, account.user_id, 61));
+
+  ASSERT_FALSE(second.has_value());
+  EXPECT_EQ(second.error(), CoreError::record_exists);
+
+  const auto purchases = make_registry().purchases_of_user(account.user_id);
+
+  ASSERT_TRUE(purchases.has_value());
+  ASSERT_EQ(purchases->size(), 1U);
+  EXPECT_EQ(purchases->front().purchase_id, 51U);
+}
+
+TEST_F(MetadataRegistryTest, KeepsPurchasesOfDifferentPublications) {
+  const UserAccount account = make_user(13, "покупатель");
+
+  ASSERT_TRUE(make_registry().add_user(account).has_value());
+  ASSERT_TRUE(make_registry().add_purchase(make_purchase(71, account.user_id, 81)).has_value());
+  ASSERT_TRUE(make_registry().add_purchase(make_purchase(72, account.user_id, 82)).has_value());
+
+  const auto purchases = make_registry().purchases_of_user(account.user_id);
+
+  ASSERT_TRUE(purchases.has_value());
+  EXPECT_EQ(purchases->size(), 2U);
+}
+
+TEST_F(MetadataRegistryTest, KeepsPurchasesOfPublicationByDifferentUsers) {
+  const UserAccount first = make_user(14, "первый");
+  const UserAccount second = make_user(15, "второй");
+
+  ASSERT_TRUE(make_registry().add_user(first).has_value());
+  ASSERT_TRUE(make_registry().add_user(second).has_value());
+  ASSERT_TRUE(make_registry().add_purchase(make_purchase(91, first.user_id, 93)).has_value());
+  ASSERT_TRUE(make_registry().add_purchase(make_purchase(92, second.user_id, 93)).has_value());
+
+  const auto purchases = make_registry().purchases_of_user(second.user_id);
+
+  ASSERT_TRUE(purchases.has_value());
+  ASSERT_EQ(purchases->size(), 1U);
+  EXPECT_EQ(purchases->front().purchase_id, 92U);
+}
+
 TEST_F(MetadataRegistryTest, ListsPurchasesOfUserOnly) {
   const UserAccount first = make_user(9, "первый");
   const UserAccount second = make_user(10, "второй");

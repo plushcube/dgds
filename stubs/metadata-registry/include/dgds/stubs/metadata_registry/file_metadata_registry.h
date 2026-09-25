@@ -55,6 +55,12 @@ private:
     return purchases_dir() / (std::to_string(purchase_id) + k_purchase_suffix);
   }
 
+  [[nodiscard]] std::filesystem::path pair_path(const core::UserId &user_id,
+                                                const core::PublicationId &publication_id) const {
+    return m_root / k_pairs_directory /
+           (core::to_hex(user_id.data(), user_id.size()) + "-" + std::to_string(publication_id) + k_pair_suffix);
+  }
+
   [[nodiscard]] std::filesystem::path receipt_path(const core::PurchaseId &purchase_id,
                                                    const core::DevicePublicKey &device_key) const {
     return m_root / k_receipts_directory /
@@ -66,6 +72,8 @@ private:
   static constexpr const char *k_name_suffix = ".name";
   static constexpr const char *k_publications_directory = "publications";
   static constexpr const char *k_purchases_directory = "purchases";
+  static constexpr const char *k_pairs_directory = "pairs";
+  static constexpr const char *k_pair_suffix = ".pair";
   static constexpr const char *k_receipts_directory = "receipts";
   static constexpr const char *k_user_suffix = ".user";
   static constexpr const char *k_publication_suffix = ".publication";
