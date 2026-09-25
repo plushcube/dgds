@@ -11,6 +11,7 @@
 #include <dgds/core/envelope/receipt.h>
 #include <dgds/core/identity/canonical_form.h>
 #include <dgds/core/identity/content_identity.h>
+#include <dgds/core/identity/user_id.h>
 #include <dgds/core/signature/author_signature.h>
 #include <dgds/stubs/blob_store/file_blob_store.h>
 #include <dgds/stubs/identity_registry/file_identity_registry.h>
@@ -110,13 +111,13 @@ DeviceEnvelope envelope_of(const Json &value) {
 Receipt receipt_of(const Json &value) {
   const Json &header = value.at("header");
 
-  return Receipt{
-      .header = ReceiptHeader{.version = header.at("version").get<std::uint8_t>(),
-                              .purchase_id = std::stoull(header.at("purchase_id").get<std::string>()),
-                              .user_id = bytes_of<dgds::core::k_user_id_size>(header.at("user_id").get<std::string>()),
-                              .purchased_at = header.at("purchased_at").get<dgds::core::Timestamp>(),
-                              .issued_at = header.at("issued_at").get<dgds::core::Timestamp>()},
-      .wrapped_key = envelope_of(value.at("wrapped_key"))};
+  return Receipt{.header = ReceiptHeader{.version = header.at("version").get<std::uint8_t>(),
+                                         .purchase_id = std::stoull(header.at("purchase_id").get<std::string>()),
+                                         .user_id = dgds::core::from_uuid(header.at("user_id").get<std::string>())
+                                                        .value_or(dgds::core::UserId{}),
+                                         .purchased_at = header.at("purchased_at").get<dgds::core::Timestamp>(),
+                                         .issued_at = header.at("issued_at").get<dgds::core::Timestamp>()},
+                 .wrapped_key = envelope_of(value.at("wrapped_key"))};
 }
 
 Package package_of(const Json &value) {

@@ -1,6 +1,7 @@
 #include <dgds/server/api/codec.h>
 
 #include <dgds/core/identity/content_identity.h>
+#include <dgds/core/identity/user_id.h>
 
 #include <nlohmann/json.hpp>
 
@@ -110,7 +111,7 @@ Json purchase_summary_json(const core::PurchaseSummary &value) {
 Json receipt_json(const core::Receipt &value) {
   return Json{{"header", Json{{"version", value.header.version},
                               {"purchase_id", std::to_string(value.header.purchase_id)},
-                              {"user_id", hex_of(value.header.user_id)},
+                              {"user_id", core::to_uuid(value.header.user_id)},
                               {"purchased_at", value.header.purchased_at},
                               {"issued_at", value.header.issued_at}}},
               {"wrapped_key", envelope_json(value.wrapped_key)}};
@@ -149,7 +150,7 @@ std::optional<core::Credentials> read_credentials(core::Content body) {
     return std::nullopt;
   }
 
-  const auto bytes = bytes_of<core::k_user_id_size>(user_id.value());
+  const auto bytes = core::from_uuid(user_id.value());
 
   if (!bytes.has_value()) {
     return std::nullopt;
@@ -277,11 +278,11 @@ std::optional<core::Signature> read_signature(core::Content body) {
 }
 
 std::string encode(const core::UserAccount &account) {
-  return Json{{"user_id", hex_of(account.user_id)}, {"name", account.name}}.dump();
+  return Json{{"user_id", core::to_uuid(account.user_id)}, {"name", account.name}}.dump();
 }
 
 std::string encode(const core::Credentials &credentials) {
-  return Json{{"user_id", hex_of(credentials.user_id)}, {"token", credentials.token}}.dump();
+  return Json{{"user_id", core::to_uuid(credentials.user_id)}, {"token", credentials.token}}.dump();
 }
 
 std::string encode(const core::PublicationSummaries &summaries) {
