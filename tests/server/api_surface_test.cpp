@@ -207,6 +207,42 @@ private:
   static inline std::atomic<unsigned> counter{0};
 };
 
+TEST_F(SurfaceTest, RejectsNameOutsideAllowedLength) {
+  const auto too_long = response_of(m_surface.register_user(request_of(Json{{"name", std::string(257, 'x')}})));
+  EXPECT_EQ(too_long.at("error").at("code").get<std::string>(), "request_malformed");
+
+  const auto empty = response_of(m_surface.register_user(request_of(Json{{"name", ""}})));
+  EXPECT_EQ(empty.at("error").at("code").get<std::string>(), "request_malformed");
+}
+
+TEST_F(SurfaceTest, RejectsDraftFieldOutsideAllowedLength) {
+  const std::string credentials = credentials_of(account_of("автор"));
+
+  const Json request{{"credentials", Json::parse(credentials)},
+                     {"draft", Json{{"title", std::string(257, 'x')}, {"file_name", "файл.txt"}, {"content", "текст"}}},
+                     {"author_key", std::string(64, 'a')},
+                     {"signature", std::string(128, 'b')}};
+
+  const auto rejected = response_of(m_surface.publish(request_of(request)));
+
+  EXPECT_EQ(rejected.at("error").at("code").get<std::string>(), "request_malformed");
+}
+
+TEST_F(SurfaceTest, RejectsContentLargerThanLimit) {
+  const std::string credentials = credentials_of(account_of("автор"));
+
+  const Json request{{"credentials", Json::parse(credentials)},
+                     {"draft", Json{{"title", std::string(k_title)},
+                                    {"file_name", "файл.txt"},
+                                    {"content", std::string(dgds::core::k_max_content_bytes + 1, 'x')}}},
+                     {"author_key", std::string(64, 'a')},
+                     {"signature", std::string(128, 'b')}};
+
+  const auto rejected = response_of(m_surface.publish(request_of(request)));
+
+  EXPECT_EQ(rejected.at("error").at("code").get<std::string>(), "request_malformed");
+}
+
 TEST_F(SurfaceTest, RunsScenarioAcrossEveryOperation) {
   const std::string author_account = account_of("автор");
   const std::string buyer_account = account_of("покупатель");

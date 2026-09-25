@@ -2,6 +2,7 @@
 
 #include <dgds/core/models/errors.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -9,6 +10,13 @@
 namespace dgds::core {
 
 inline constexpr std::uint8_t k_protocol_version = 1;
+
+inline constexpr std::size_t k_max_content_bytes = 4 * 1024 * 1024;
+inline constexpr std::size_t k_max_request_bytes = k_max_content_bytes + 4096;
+inline constexpr std::size_t k_max_response_bytes = 2 * k_max_content_bytes + 4096;
+
+static_assert(k_max_request_bytes > k_max_content_bytes);
+static_assert(k_max_response_bytes > 2 * k_max_content_bytes);
 
 inline constexpr std::string_view k_request_malformed_code = "request_malformed";
 inline constexpr std::string_view k_operation_unknown_code = "operation_unknown";

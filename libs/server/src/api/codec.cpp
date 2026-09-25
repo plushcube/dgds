@@ -25,6 +25,8 @@ constexpr const char *k_ciphertext = "ciphertext";
 constexpr const char *k_tag = "tag";
 constexpr const char *k_ephemeral_key = "ephemeral_key";
 constexpr const char *k_wrapped = "wrapped";
+constexpr std::size_t k_max_name_bytes = 256;
+constexpr std::size_t k_max_field_bytes = 256;
 
 template <std::size_t Size> std::string hex_of(const std::array<std::uint8_t, Size> &bytes) {
   return core::to_hex(bytes.data(), bytes.size());
@@ -191,7 +193,7 @@ std::optional<core::ContentBuffer> read_name(core::Content body) {
 
   const auto name = read_string(parsed.value(), "name");
 
-  if (!name.has_value()) {
+  if (!name.has_value() || name->empty() || name->size() > k_max_name_bytes) {
     return std::nullopt;
   }
 
@@ -216,6 +218,11 @@ std::optional<core::PublicationDraft> read_draft(core::Content body) {
   const auto content = read_string(draft.value(), "content");
 
   if (!title.has_value() || !file_name.has_value() || !content.has_value()) {
+    return std::nullopt;
+  }
+
+  if (title->size() > k_max_field_bytes || file_name->size() > k_max_field_bytes ||
+      content->size() > core::k_max_content_bytes) {
     return std::nullopt;
   }
 
