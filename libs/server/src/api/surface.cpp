@@ -119,6 +119,10 @@ std::string Surface::publish(core::Content body) {
     return failure(author_id.error());
   }
 
+  if (!m_limiter.accepted(LimitedOperation::publication, author_id.value(), m_clock())) {
+    return failure(ProtocolError::rate_limit_exceeded);
+  }
+
   const auto publication =
       m_publications.publish(author_id.value(), draft.value(), author_key.value(), signature.value(), m_clock());
 
@@ -281,6 +285,10 @@ std::string Surface::fetch_package(core::Content body) {
 
   if (!user_id.has_value()) {
     return failure(user_id.error());
+  }
+
+  if (!m_limiter.accepted(LimitedOperation::delivery, user_id.value(), m_clock())) {
+    return failure(ProtocolError::rate_limit_exceeded);
   }
 
   const auto package = m_delivery.fetch_package(user_id.value(), purchase_id.value(), device_key.value());

@@ -1,5 +1,6 @@
 #include <dgds/server/api/errors.h>
 #include <dgds/server/api/surface.h>
+#include <dgds/server/middleware/rate_limiter.h>
 #include <dgds/server/services/catalog_service.h>
 #include <dgds/server/services/delivery_service.h>
 #include <dgds/server/services/publication_service.h>
@@ -57,6 +58,8 @@ using dgds::server::CatalogService;
 using dgds::server::DeliveryService;
 using dgds::server::PublicationService;
 using dgds::server::PurchaseService;
+using dgds::server::RateLimit;
+using dgds::server::RateLimiter;
 using dgds::server::SessionStore;
 using dgds::server::UserService;
 using dgds::server::api::code_of;
@@ -193,8 +196,9 @@ protected:
   DeliveryService m_delivery{m_blobs, m_keys, m_metadata};
 
   dgds::core::Timestamp m_now = 1700000000;
-  Surface m_surface{
-      m_users, m_sessions, m_catalog, m_publications, m_purchases, m_delivery, [this]() { return m_now; }};
+  RateLimiter m_limiter;
+  Surface m_surface{m_users,     m_sessions, m_catalog, m_publications,
+                    m_purchases, m_delivery, m_limiter, [this]() { return m_now; }};
 
 private:
   static inline std::atomic<unsigned> counter{0};
@@ -406,6 +410,112 @@ TEST_F(SurfaceTest, DistinguishesErrorKinds) {
                                     code_in(version),   code_in(authorization),       code_in(operation)};
 
   EXPECT_EQ(codes.size(), 6U);
+}
+
+TEST_F(SurfaceTest, RefusesExcessPublications) {
+  RateLimiter limiter{RateLimit{.calls = 2, .window = 60}};
+  Surface surface{m_users,     m_sessions, m_catalog, m_publications,
+                  m_purchases, m_delivery, limiter,   [this]() { return m_now; }};
+
+  const std::string author_credentials = credentials_of(account_of("автор"));
+  const std::string buyer_credentials = credentials_of(account_of("покупатель"));
+
+  const auto keys = generate_author_key();
+  ASSERT_TRUE(keys.has_value());
+
+  const auto publish_with = [&](const std::string &credentials, std::string_view name, const std::string &text) {
+    const auto identity = content_identity(text);
+    EXPECT_TRUE(identity.has_value());
+
+    const auto signature = sign_author(identity.value(), name, keys->private_key);
+    EXPECT_TRUE(signature.has_value());
+
+    return response_of(surface.publish(
+        request_of(Json{{"credentials", Json::parse(credentials)},
+                        {"draft", Json{{"title", std::string(k_title)}, {"file_name", "файл.txt"}, {"content", text}}},
+                        {"author_key", to_hex(keys->public_key.data(), keys->public_key.size())},
+                        {"signature", to_hex(signature->data(), signature->size())}})));
+  };
+
+  const std::string base = long_text();
+
+  EXPECT_TRUE(publish_with(author_credentials, "автор", base + "первый\n").contains("data"));
+  EXPECT_TRUE(publish_with(author_credentials, "автор", base + "второй\n").contains("data"));
+
+  const auto limited = publish_with(author_credentials, "автор", base + "третий\n");
+
+  ASSERT_TRUE(limited.contains("error")) << limited.dump();
+  EXPECT_EQ(limited.at("error").at("code").get<std::string>(),
+            std::string(code_of(ProtocolError::rate_limit_exceeded)));
+
+  EXPECT_TRUE(publish_with(buyer_credentials, "покупатель", base + "четвёртый\n").contains("data"));
+}
+
+TEST_F(SurfaceTest, RefusesExcessDeliveries) {
+  RateLimiter limiter{RateLimit{.calls = 2, .window = 60}};
+  Surface surface{m_users,     m_sessions, m_catalog, m_publications,
+                  m_purchases, m_delivery, limiter,   [this]() { return m_now; }};
+
+  const std::string author_credentials = credentials_of(account_of("автор"));
+  const std::string buyer_credentials = credentials_of(account_of("покупатель"));
+
+  const std::string text = long_text();
+  const auto keys = generate_author_key();
+  const auto identity = content_identity(text);
+  ASSERT_TRUE(keys.has_value());
+  ASSERT_TRUE(identity.has_value());
+
+  const auto signature = sign_author(identity.value(), "автор", keys->private_key);
+  ASSERT_TRUE(signature.has_value());
+
+  const auto published = response_of(surface.publish(
+      request_of(Json{{"credentials", Json::parse(author_credentials)},
+                      {"draft", Json{{"title", std::string(k_title)}, {"file_name", "файл.txt"}, {"content", text}}},
+                      {"author_key", to_hex(keys->public_key.data(), keys->public_key.size())},
+                      {"signature", to_hex(signature->data(), signature->size())}})));
+  ASSERT_TRUE(published.contains("data")) << published.dump();
+
+  const auto device = generate_device_key();
+  ASSERT_TRUE(device.has_value());
+
+  const std::string publication_id = published.at("data").get<std::string>();
+  const std::string device_key = to_hex(device->public_key.data(), device->public_key.size());
+
+  const auto receipt = response_of(surface.buy(request_of(Json{{"credentials", Json::parse(buyer_credentials)},
+                                                               {"publication_id", publication_id},
+                                                               {"device_key", device_key}})));
+  ASSERT_TRUE(receipt.contains("data")) << receipt.dump();
+
+  const std::string purchase_id = receipt.at("data").at("header").at("purchase_id").get<std::string>();
+
+  const auto fetch = [&] {
+    return response_of(surface.fetch_package(request_of(Json{
+        {"credentials", Json::parse(buyer_credentials)}, {"purchase_id", purchase_id}, {"device_key", device_key}})));
+  };
+
+  EXPECT_TRUE(fetch().contains("data"));
+  EXPECT_TRUE(fetch().contains("data"));
+
+  const auto limited = fetch();
+
+  ASSERT_TRUE(limited.contains("error")) << limited.dump();
+  EXPECT_EQ(limited.at("error").at("code").get<std::string>(),
+            std::string(code_of(ProtocolError::rate_limit_exceeded)));
+
+  const auto other_device = generate_device_key();
+  ASSERT_TRUE(other_device.has_value());
+
+  const std::string other_key = to_hex(other_device->public_key.data(), other_device->public_key.size());
+
+  const auto own_receipt = response_of(surface.buy(request_of(Json{{"credentials", Json::parse(author_credentials)},
+                                                                   {"publication_id", publication_id},
+                                                                   {"device_key", other_key}})));
+  ASSERT_TRUE(own_receipt.contains("data")) << own_receipt.dump();
+
+  const auto other_fetch = response_of(surface.fetch_package(request_of(Json{
+      {"credentials", Json::parse(author_credentials)}, {"purchase_id", publication_id}, {"device_key", other_key}})));
+
+  ASSERT_TRUE(other_fetch.contains("data")) << other_fetch.dump();
 }
 
 } // namespace

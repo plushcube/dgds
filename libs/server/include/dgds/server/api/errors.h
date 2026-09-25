@@ -10,6 +10,7 @@ enum class ProtocolError {
   version_unsupported,
   operation_unknown,
   response_malformed,
+  rate_limit_exceeded,
 };
 
 [[nodiscard]] core::Content code_of(ProtocolError error);

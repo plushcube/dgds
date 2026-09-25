@@ -12,6 +12,8 @@ core::Content code_of(ProtocolError error) {
     return "operation_unknown";
   case ProtocolError::response_malformed:
     return "response_malformed";
+  case ProtocolError::rate_limit_exceeded:
+    return "rate_limit_exceeded";
   }
 
   return "failure";

@@ -3,6 +3,7 @@
 #include <dgds/core/models/content.h>
 #include <dgds/core/models/timestamp.h>
 #include <dgds/server/api/errors.h>
+#include <dgds/server/middleware/rate_limiter.h>
 #include <dgds/server/services/catalog_service.h>
 #include <dgds/server/services/delivery_service.h>
 #include <dgds/server/services/publication_service.h>
@@ -22,9 +23,9 @@ public:
   using Clock = std::function<core::Timestamp()>;
 
   Surface(UserService &users, SessionStore &sessions, CatalogService &catalog, PublicationService &publications,
-          PurchaseService &purchases, DeliveryService &delivery, Clock clock)
+          PurchaseService &purchases, DeliveryService &delivery, RateLimiter &limiter, Clock clock)
       : m_users(users), m_sessions(sessions), m_catalog(catalog), m_publications(publications), m_purchases(purchases),
-        m_delivery(delivery), m_clock(std::move(clock)) {}
+        m_delivery(delivery), m_limiter(limiter), m_clock(std::move(clock)) {}
 
   [[nodiscard]] std::string register_user(core::Content body);
   [[nodiscard]] std::string log_in(core::Content body);
@@ -50,6 +51,7 @@ private:
   PublicationService &m_publications;
   PurchaseService &m_purchases;
   DeliveryService &m_delivery;
+  RateLimiter &m_limiter;
   Clock m_clock;
 };
 
