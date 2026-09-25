@@ -1,4 +1,5 @@
 add_library(dgds-server STATIC "src/api/codec.cpp"
+                               "src/api/errors.cpp"
                                "src/api/response.cpp"
                                "src/api/surface.cpp"
                                "src/services/access.cpp"

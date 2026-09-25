@@ -1,3 +1,4 @@
+#include <dgds/server/api/errors.h>
 #include <dgds/server/api/surface.h>
 #include <dgds/server/services/catalog_service.h>
 #include <dgds/server/services/delivery_service.h>
@@ -28,6 +29,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unistd.h>
@@ -38,6 +40,7 @@ using Json = nlohmann::json;
 
 using dgds::core::canonical_form;
 using dgds::core::content_identity;
+using dgds::core::CoreError;
 using dgds::core::DeviceEnvelope;
 using dgds::core::generate_author_key;
 using dgds::core::generate_device_key;
@@ -56,6 +59,8 @@ using dgds::server::PublicationService;
 using dgds::server::PurchaseService;
 using dgds::server::SessionStore;
 using dgds::server::UserService;
+using dgds::server::api::code_of;
+using dgds::server::api::ProtocolError;
 using dgds::server::api::Surface;
 using dgds::stubs::FileBlobStore;
 using dgds::stubs::FileIdentityRegistry;
@@ -306,7 +311,8 @@ TEST_F(SurfaceTest, RunsScenarioAcrossEveryOperation) {
 TEST_F(SurfaceTest, ReportsMalformedRequestAndUnknownOperation) {
   const auto malformed = response_of(m_surface.register_user(R"({"nope": 1})"));
   ASSERT_TRUE(malformed.contains("error")) << malformed.dump();
-  EXPECT_EQ(malformed.at("error").at("code").get<std::string>(), "request_malformed");
+  EXPECT_EQ(malformed.at("error").at("code").get<std::string>(),
+            std::string(dgds::server::api::code_of(dgds::server::api::ProtocolError::request_malformed)));
 
   const auto broken = response_of(m_surface.log_in("{"));
   ASSERT_TRUE(broken.contains("error")) << broken.dump();
@@ -314,24 +320,92 @@ TEST_F(SurfaceTest, ReportsMalformedRequestAndUnknownOperation) {
 
   const auto unknown = response_of(Surface::unknown_operation());
   ASSERT_TRUE(unknown.contains("error")) << unknown.dump();
-  EXPECT_EQ(unknown.at("error").at("code").get<std::string>(), "operation_unknown");
+  EXPECT_EQ(unknown.at("error").at("code").get<std::string>(),
+            std::string(dgds::server::api::code_of(dgds::server::api::ProtocolError::operation_unknown)));
 }
 
 TEST_F(SurfaceTest, RefusesUnsupportedProtocolVersion) {
   const auto unsupported = response_of(m_surface.register_user(Json{{"name", "автор"}, {"version", 99}}.dump()));
 
   ASSERT_TRUE(unsupported.contains("error")) << unsupported.dump();
-  EXPECT_EQ(unsupported.at("error").at("code").get<std::string>(), "protocol_version_unsupported");
+  EXPECT_EQ(unsupported.at("error").at("code").get<std::string>(),
+            std::string(dgds::server::api::code_of(dgds::server::api::ProtocolError::version_unsupported)));
 
   const auto missing = response_of(m_surface.register_user(R"({"name": "автор"})"));
 
   ASSERT_TRUE(missing.contains("error")) << missing.dump();
-  EXPECT_EQ(missing.at("error").at("code").get<std::string>(), "request_malformed");
+  EXPECT_EQ(missing.at("error").at("code").get<std::string>(),
+            std::string(dgds::server::api::code_of(dgds::server::api::ProtocolError::request_malformed)));
 
   const auto accepted = response_of(m_surface.register_user(request_of(Json{{"name", "автор"}})));
 
   ASSERT_TRUE(accepted.contains("data")) << accepted.dump();
   EXPECT_EQ(accepted.at("data").at("name").get<std::string>(), "автор");
+}
+
+TEST_F(SurfaceTest, DistinguishesErrorKinds) {
+  const std::string author_account = account_of("автор");
+  const std::string buyer_account = account_of("покупатель");
+  const std::string author_credentials = credentials_of(author_account);
+  const std::string buyer_credentials = credentials_of(buyer_account);
+
+  const std::string text = long_text();
+  const auto keys = generate_author_key();
+  const auto identity = content_identity(text);
+  ASSERT_TRUE(keys.has_value());
+  ASSERT_TRUE(identity.has_value());
+
+  const auto signature = sign_author(identity.value(), "автор", keys->private_key);
+  ASSERT_TRUE(signature.has_value());
+
+  const Json publication{{"credentials", Json::parse(author_credentials)},
+                         {"draft", Json{{"title", std::string(k_title)}, {"file_name", "файл.txt"}, {"content", text}}},
+                         {"author_key", to_hex(keys->public_key.data(), keys->public_key.size())},
+                         {"signature", to_hex(signature->data(), signature->size())}};
+
+  const auto published = response_of(m_surface.publish(request_of(publication)));
+  ASSERT_TRUE(published.contains("data")) << published.dump();
+
+  const std::string publication_id = published.at("data").get<std::string>();
+  const auto device = generate_device_key();
+  ASSERT_TRUE(device.has_value());
+
+  const auto duplicate = response_of(m_surface.publish(request_of(publication)));
+  const auto missing_publication = response_of(
+      m_surface.buy(request_of(Json{{"credentials", Json::parse(buyer_credentials)},
+                                    {"publication_id", "7"},
+                                    {"device_key", to_hex(device->public_key.data(), device->public_key.size())}})));
+
+  const auto owned = response_of(
+      m_surface.buy(request_of(Json{{"credentials", Json::parse(author_credentials)},
+                                    {"publication_id", publication_id},
+                                    {"device_key", to_hex(device->public_key.data(), device->public_key.size())}})));
+  ASSERT_TRUE(owned.contains("data")) << owned.dump();
+
+  const auto not_permitted = response_of(m_surface.context_identity(
+      request_of(Json{{"credentials", Json::parse(buyer_credentials)}, {"context_id", publication_id}})));
+
+  const auto version = response_of(m_surface.register_user(Json{{"name", "третий"}, {"version", 99}}.dump()));
+
+  Json forged = Json::parse(buyer_credentials);
+  forged["token"] = "поддельный";
+  const auto authorization = response_of(m_surface.purchases(request_of(Json{{"credentials", forged}})));
+
+  const auto operation = response_of(Surface::unknown_operation());
+
+  const auto code_in = [](const Json &response) { return response.at("error").at("code").get<std::string>(); };
+
+  EXPECT_EQ(code_in(duplicate), std::string(code_of(CoreError::content_duplicate)));
+  EXPECT_EQ(code_in(missing_publication), std::string(code_of(CoreError::publication_not_found)));
+  EXPECT_EQ(code_in(not_permitted), std::string(code_of(CoreError::not_permitted)));
+  EXPECT_EQ(code_in(version), std::string(code_of(ProtocolError::version_unsupported)));
+  EXPECT_EQ(code_in(authorization), std::string(code_of(CoreError::authorization_failed)));
+  EXPECT_EQ(code_in(operation), std::string(code_of(ProtocolError::operation_unknown)));
+
+  const std::set<std::string> codes{code_in(duplicate), code_in(missing_publication), code_in(not_permitted),
+                                    code_in(version),   code_in(authorization),       code_in(operation)};
+
+  EXPECT_EQ(codes.size(), 6U);
 }
 
 } // namespace

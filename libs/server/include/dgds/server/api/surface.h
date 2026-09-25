@@ -2,6 +2,7 @@
 
 #include <dgds/core/models/content.h>
 #include <dgds/core/models/timestamp.h>
+#include <dgds/server/api/errors.h>
 #include <dgds/server/services/catalog_service.h>
 #include <dgds/server/services/delivery_service.h>
 #include <dgds/server/services/publication_service.h>
@@ -39,7 +40,7 @@ public:
   [[nodiscard]] static std::string unknown_operation();
 
 private:
-  [[nodiscard]] std::optional<std::string> version_failure(core::Content body);
+  [[nodiscard]] std::optional<ProtocolError> version_failure(core::Content body);
 
   [[nodiscard]] core::Result<core::UserId> authorized(const core::Credentials &credentials);
 

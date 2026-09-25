@@ -11,19 +11,19 @@
 namespace dgds::server::api {
 namespace {
 
-constexpr const char *k_malformed = "request_malformed";
+constexpr ProtocolError k_malformed = ProtocolError::request_malformed;
 
 } // namespace
 
-std::optional<std::string> Surface::version_failure(core::Content body) {
+std::optional<ProtocolError> Surface::version_failure(core::Content body) {
   const auto version = read_version(body);
 
   if (!version.has_value()) {
-    return std::string(k_malformed);
+    return k_malformed;
   }
 
   if (version.value() != core::k_protocol_version) {
-    return std::string("protocol_version_unsupported");
+    return ProtocolError::version_unsupported;
   }
 
   return std::nullopt;
@@ -43,7 +43,7 @@ core::Result<core::UserId> Surface::authorized(const core::Credentials &credenti
   return user_id.value();
 }
 
-std::string Surface::unknown_operation() { return failure("operation_unknown"); }
+std::string Surface::unknown_operation() { return failure(ProtocolError::operation_unknown); }
 
 std::string Surface::register_user(core::Content body) {
   if (const auto failure_code = version_failure(body); failure_code.has_value()) {
