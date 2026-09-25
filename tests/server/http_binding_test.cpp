@@ -144,6 +144,19 @@ protected:
   AddressLimitTest() : HttpBindingTest(RateLimit{.calls = 2, .window = 60}) {}
 };
 
+TEST_F(HttpBindingTest, RejectsRequestBodyBeyondLimit) {
+  const std::string oversized(dgds::core::k_max_request_bytes + 1024, 'x');
+
+  httplib::Client client{"127.0.0.1", m_port};
+  client.set_connection_timeout(5);
+  client.set_write_timeout(5);
+
+  const auto response = client.Post("/register", oversized, "application/json");
+
+  ASSERT_TRUE(response);
+  EXPECT_EQ(response->status, 413) << "тело сверх предела должно отклоняться до разбора содержимого";
+}
+
 TEST_F(AddressLimitTest, RejectsRequestsBeyondAddressLimit) {
   const auto first = post("/catalog", Json::object());
   const auto second = post("/catalog", Json::object());
