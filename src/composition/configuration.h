@@ -1,12 +1,18 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
+#include <string>
 
 namespace dgds::app {
 
 struct Configuration {
   std::filesystem::path storage_root;
   std::filesystem::path master_key;
+  std::filesystem::path tls_directory;
+  std::string host;
+  int port;
+  std::size_t rate_limit;
 };
 
 enum class Command {

@@ -3,7 +3,7 @@ set(DGDS_BACKEND
     CACHE STRING "Набор реализаций серверных портов: stubs | services")
 set_property(CACHE DGDS_BACKEND PROPERTY STRINGS stubs services)
 
-add_executable(${TASK_CLI} "main.cpp" "composition/configuration.cpp")
+add_executable(${TASK_CLI} "main.cpp" "composition/configuration.cpp" "composition/tls.cpp")
 
 target_include_directories(${TASK_CLI} PRIVATE "${PROJECT_BINARY_DIR}/include")
 
