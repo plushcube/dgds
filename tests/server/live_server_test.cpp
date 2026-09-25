@@ -45,6 +45,17 @@ TEST_F(LiveServerTest, AnswersOverTlsWithVerifiedCertificate) {
   EXPECT_TRUE(body.at("data").empty());
 }
 
+TEST_F(LiveServerTest, KeepsPrivateKeyReadableOnlyByOwner) {
+  const std::filesystem::path key = m_server.root() / "tls" / "server.key";
+  ASSERT_TRUE(std::filesystem::exists(key));
+
+  const auto mode = std::filesystem::status(key).permissions();
+
+  EXPECT_NE(mode & std::filesystem::perms::owner_read, std::filesystem::perms::none);
+  EXPECT_EQ(mode & std::filesystem::perms::group_all, std::filesystem::perms::none);
+  EXPECT_EQ(mode & std::filesystem::perms::others_all, std::filesystem::perms::none);
+}
+
 TEST_F(LiveServerTest, RefusesMalformedRequest) {
   const auto response = post("/purchases", R"({"version":1})");
 
