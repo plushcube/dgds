@@ -1,8 +1,10 @@
 #include <dgds/stubs/support/file_storage.h>
 
 #include <dgds/core/envelope/keys.h>
+#include <dgds/core/identity/content_identity.h>
 
 #include <openssl/crypto.h>
+#include <openssl/rand.h>
 
 #include <algorithm>
 #include <array>
@@ -10,7 +12,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <fcntl.h>
+#include <string>
 #include <sys/stat.h>
+#include <system_error>
 #include <unistd.h>
 #include <vector>
 
@@ -42,25 +46,75 @@ bool write_all(int descriptor, core::Content bytes) {
   return true;
 }
 
-core::Result<SecretCreation> create_secret_file(const std::filesystem::path &path,
-                                                const core::SecretBytes<k_secret_size> &secret) {
-  const int descriptor = ::open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY, k_owner_only_file);
+constexpr std::size_t k_unique_suffix_bytes = 8;
+
+std::filesystem::path unique_pending(const std::filesystem::path &path) {
+  std::array<std::uint8_t, k_unique_suffix_bytes> random{};
+
+  if (RAND_bytes(random.data(), static_cast<int>(random.size())) != 1) {
+    return {};
+  }
+
+  return path.string() + "." + core::to_hex(random.data(), random.size()) + k_pending_suffix;
+}
+
+void sync_directory(const std::filesystem::path &path) {
+  const int descriptor = ::open(path.c_str(), O_RDONLY | O_NOFOLLOW);
 
   if (descriptor < 0) {
-    if (errno == EEXIST) {
+    return;
+  }
+
+  ::fsync(descriptor);
+  ::close(descriptor);
+}
+
+bool write_and_sync(int descriptor, core::Content bytes) {
+  bool written = write_all(descriptor, bytes);
+
+  if (written && ::fsync(descriptor) != 0) {
+    written = false;
+  }
+
+  return written;
+}
+
+core::Result<SecretCreation> create_secret_file(const std::filesystem::path &path,
+                                                const core::SecretBytes<k_secret_size> &secret) {
+  const std::filesystem::path pending = unique_pending(path);
+
+  if (pending.empty()) {
+    return std::unexpected(core::CoreError::crypto_failed);
+  }
+
+  const int descriptor = ::open(pending.c_str(), O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW, k_owner_only_file);
+
+  if (descriptor < 0) {
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
+  const core::Content bytes(reinterpret_cast<const char *>(secret.data()), secret.size());
+  const bool written = write_and_sync(descriptor, bytes);
+  const bool closed = ::close(descriptor) == 0;
+
+  if (!written || !closed) {
+    ::unlink(pending.c_str());
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
+  if (::link(pending.c_str(), path.c_str()) != 0) {
+    const bool taken = errno == EEXIST;
+    ::unlink(pending.c_str());
+
+    if (taken) {
       return SecretCreation::already_present;
     }
 
     return std::unexpected(core::CoreError::storage_failed);
   }
 
-  const core::Content bytes(reinterpret_cast<const char *>(secret.data()), secret.size());
-  const bool written = write_all(descriptor, bytes);
-
-  if (!written || ::close(descriptor) != 0) {
-    ::unlink(path.c_str());
-    return std::unexpected(core::CoreError::storage_failed);
-  }
+  ::unlink(pending.c_str());
+  sync_directory(path.parent_path());
 
   return SecretCreation::created;
 }
@@ -94,7 +148,7 @@ core::Result<bool> claim_file(const std::filesystem::path &path) {
     return std::unexpected(prepared.error());
   }
 
-  const int descriptor = ::open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY, k_owner_only_file);
+  const int descriptor = ::open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW, k_owner_only_file);
 
   if (descriptor >= 0) {
     ::close(descriptor);
@@ -167,7 +221,7 @@ core::Result<std::vector<std::filesystem::path>> list_files(const std::filesyste
 }
 
 core::Result<core::ContentBuffer> load_file(const std::filesystem::path &path, core::CoreError missing) {
-  const int descriptor = ::open(path.c_str(), O_RDONLY);
+  const int descriptor = ::open(path.c_str(), O_RDONLY | O_NOFOLLOW);
 
   if (descriptor < 0) {
     if (errno == ENOENT) {
@@ -211,14 +265,19 @@ core::Result<void> store_file(const std::filesystem::path &path, core::Content b
     return std::unexpected(prepared.error());
   }
 
-  const std::filesystem::path pending = path.string() + k_pending_suffix;
-  const int descriptor = ::open(pending.c_str(), O_CREAT | O_TRUNC | O_WRONLY, k_owner_only_file);
+  const std::filesystem::path pending = unique_pending(path);
+
+  if (pending.empty()) {
+    return std::unexpected(core::CoreError::crypto_failed);
+  }
+
+  const int descriptor = ::open(pending.c_str(), O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW, k_owner_only_file);
 
   if (descriptor < 0) {
     return std::unexpected(core::CoreError::storage_failed);
   }
 
-  const bool written = write_all(descriptor, bytes);
+  const bool written = write_and_sync(descriptor, bytes);
   const bool closed = ::close(descriptor) == 0;
 
   if (!written || !closed) {
@@ -234,7 +293,53 @@ core::Result<void> store_file(const std::filesystem::path &path, core::Content b
     return std::unexpected(core::CoreError::storage_failed);
   }
 
+  sync_directory(path.parent_path());
+
   return {};
+}
+
+core::Result<bool> store_file_if_absent(const std::filesystem::path &path, core::Content bytes) {
+  const auto prepared = ensure_directory(path.parent_path());
+
+  if (!prepared.has_value()) {
+    return std::unexpected(prepared.error());
+  }
+
+  const std::filesystem::path pending = unique_pending(path);
+
+  if (pending.empty()) {
+    return std::unexpected(core::CoreError::crypto_failed);
+  }
+
+  const int descriptor = ::open(pending.c_str(), O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW, k_owner_only_file);
+
+  if (descriptor < 0) {
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
+  const bool written = write_and_sync(descriptor, bytes);
+  const bool closed = ::close(descriptor) == 0;
+
+  if (!written || !closed) {
+    ::unlink(pending.c_str());
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
+  if (::link(pending.c_str(), path.c_str()) != 0) {
+    const bool present = errno == EEXIST;
+    ::unlink(pending.c_str());
+
+    if (present) {
+      return false;
+    }
+
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
+  ::unlink(pending.c_str());
+  sync_directory(path.parent_path());
+
+  return true;
 }
 
 core::Result<void> remove_file(const std::filesystem::path &path) {
@@ -246,7 +351,7 @@ core::Result<void> remove_file(const std::filesystem::path &path) {
 }
 
 core::Result<core::SecretBytes<k_secret_size>> load_secret(const std::filesystem::path &path) {
-  const int descriptor = ::open(path.c_str(), O_RDONLY);
+  const int descriptor = ::open(path.c_str(), O_RDONLY | O_NOFOLLOW);
 
   if (descriptor < 0) {
     return std::unexpected(core::CoreError::storage_failed);

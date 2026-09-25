@@ -69,16 +69,6 @@ core::CoreError release_marker(const std::filesystem::path &marker, core::CoreEr
 } // namespace
 
 core::Result<void> FileMetadataRegistry::add_user(const core::UserAccount &account) {
-  const auto present = file_exists(user_path(account.user_id));
-
-  if (!present.has_value()) {
-    return std::unexpected(present.error());
-  }
-
-  if (present.value()) {
-    return std::unexpected(core::CoreError::record_exists);
-  }
-
   const auto marker = name_path(account.name);
 
   if (!marker.has_value()) {
@@ -101,10 +91,14 @@ core::Result<void> FileMetadataRegistry::add_user(const core::UserAccount &accou
     return std::unexpected(release_marker(marker.value(), k_broken_record));
   }
 
-  const auto stored = store_file(user_path(account.user_id), encoded.value());
+  const auto stored = store_file_if_absent(user_path(account.user_id), encoded.value());
 
   if (!stored.has_value()) {
     return std::unexpected(release_marker(marker.value(), stored.error()));
+  }
+
+  if (!stored.value()) {
+    return std::unexpected(release_marker(marker.value(), core::CoreError::record_exists));
   }
 
   return {};
@@ -155,23 +149,23 @@ core::Result<core::UserAccount> FileMetadataRegistry::find_user_by_name(core::Co
 }
 
 core::Result<void> FileMetadataRegistry::add_publication(const core::PublicationRecord &publication) {
-  const auto present = file_exists(publication_path(publication.publication_id));
-
-  if (!present.has_value()) {
-    return std::unexpected(present.error());
-  }
-
-  if (present.value()) {
-    return std::unexpected(core::CoreError::record_exists);
-  }
-
   const auto encoded = encode_publication(publication);
 
   if (!encoded.has_value()) {
     return std::unexpected(k_broken_record);
   }
 
-  return store_file(publication_path(publication.publication_id), encoded.value());
+  const auto stored = store_file_if_absent(publication_path(publication.publication_id), encoded.value());
+
+  if (!stored.has_value()) {
+    return std::unexpected(stored.error());
+  }
+
+  if (!stored.value()) {
+    return std::unexpected(core::CoreError::record_exists);
+  }
+
+  return {};
 }
 
 core::Result<core::PublicationRecord>
@@ -214,23 +208,23 @@ core::Result<core::PublicationRecords> FileMetadataRegistry::publications_of_aut
 }
 
 core::Result<void> FileMetadataRegistry::add_purchase(const core::PurchaseRecord &purchase) {
-  const auto present = file_exists(purchase_path(purchase.purchase_id));
-
-  if (!present.has_value()) {
-    return std::unexpected(present.error());
-  }
-
-  if (present.value()) {
-    return std::unexpected(core::CoreError::record_exists);
-  }
-
   const auto encoded = encode_purchase(purchase);
 
   if (!encoded.has_value()) {
     return std::unexpected(k_broken_record);
   }
 
-  return store_file(purchase_path(purchase.purchase_id), encoded.value());
+  const auto stored = store_file_if_absent(purchase_path(purchase.purchase_id), encoded.value());
+
+  if (!stored.has_value()) {
+    return std::unexpected(stored.error());
+  }
+
+  if (!stored.value()) {
+    return std::unexpected(core::CoreError::record_exists);
+  }
+
+  return {};
 }
 
 core::Result<core::PurchaseRecord> FileMetadataRegistry::find_purchase(const core::PurchaseId &purchase_id) {
