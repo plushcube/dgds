@@ -5,6 +5,7 @@
 namespace {
 
 using dgds::core::content_identity;
+using dgds::core::from_hex;
 using dgds::core::to_hex;
 
 TEST(ContentIdentity, MarksDoNotChangeIdentity) {
@@ -43,6 +44,19 @@ TEST(ContentIdentity, MatchesKnownDigestOfAbc) {
   ASSERT_TRUE(identity.has_value());
 
   EXPECT_EQ(to_hex(identity.value()), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+}
+
+TEST(ContentIdentity, RoundTripsHex) {
+  const std::string raw = "текст для кругового перехода";
+  const std::string encoded = to_hex(reinterpret_cast<const std::uint8_t *>(raw.data()), raw.size());
+
+  const auto decoded = from_hex(encoded);
+
+  ASSERT_TRUE(decoded.has_value());
+  EXPECT_EQ(decoded.value(), raw);
+
+  EXPECT_FALSE(from_hex("abc").has_value());
+  EXPECT_FALSE(from_hex("zz").has_value());
 }
 
 } // namespace
