@@ -57,7 +57,10 @@ protected:
     std::ofstream(m_text, std::ios::binary) << sample_text();
   }
 
-  void SetUp() override { ASSERT_TRUE(m_server.start(m_root / "server")); }
+  void SetUp() override {
+    ASSERT_TRUE(m_server.start(m_root / "server"));
+    std::filesystem::create_directories(device());
+  }
 
   void TearDown() override {
     m_server.stop();
@@ -70,10 +73,15 @@ protected:
            ("dgds-example-" + std::string(kind) + "-" + std::to_string(::getpid()) + "-" + std::to_string(counter++));
   }
 
+  [[nodiscard]] std::filesystem::path device() const { return m_root / "device"; }
+
+  // Клиент запускается с рабочим каталогом устройства: тогда проверка отсутствия
+  // открытого текста покрывает и всё, что клиент мог бы оставить в текущем каталоге
   [[nodiscard]] RunResult run(std::string_view arguments) const {
-    const std::string command = "'" + std::string(DGDS_EXAMPLE_PATH) + "' --certificate '" +
-                                m_server.certificate().string() + "' --port " + std::to_string(m_server.port()) +
-                                " --device '" + (m_root / "device").string() + "' " + std::string(arguments) + " 2>&1";
+    const std::string command = "cd '" + device().string() + "' && '" + std::string(DGDS_EXAMPLE_PATH) +
+                                "' --certificate '" + m_server.certificate().string() + "' --port " +
+                                std::to_string(m_server.port()) + " --device '" + device().string() + "' " +
+                                std::string(arguments) + " 2>&1";
     FILE *pipe = popen(command.c_str(), "r");
     EXPECT_NE(pipe, nullptr);
 
@@ -105,6 +113,18 @@ TEST_F(ExampleRunTest, PrintsPurchasedContentAndLeavesNoPlaintext) {
   EXPECT_NE(result.output.find("Публикация"), std::string::npos);
   EXPECT_NE(result.output.find("Каталог     1 публикаций"), std::string::npos) << result.output;
   EXPECT_NE(canonical_form(result.output).find(k_marker), std::string::npos);
+
+  EXPECT_TRUE(std::filesystem::exists(device() / "device.key")) << "устройство не создало ключ";
+
+  std::size_t receipts = 0;
+
+  for (const auto &entry : std::filesystem::directory_iterator(device() / "receipts")) {
+    if (entry.is_regular_file() && entry.file_size() > 0) {
+      ++receipts;
+    }
+  }
+
+  EXPECT_EQ(receipts, 1U) << "проверка отсутствия открытого текста была бы пустой";
 
   for (const auto &entry : std::filesystem::recursive_directory_iterator(m_root)) {
     if (!entry.is_regular_file()) {
