@@ -77,8 +77,9 @@ int main(int argc, char *argv[]) {
   }
 
   const auto fingerprint = dgds::app::certificate_fingerprint(tls->certificate);
+  const auto pin = dgds::app::key_pin(tls->certificate);
 
-  if (!fingerprint.has_value()) {
+  if (!fingerprint.has_value() || !pin.has_value()) {
     std::cerr << "Не удалось прочитать сертификат сервера.\n";
     return 1;
   }
@@ -115,6 +116,7 @@ int main(int argc, char *argv[]) {
             << "Каталог данных:  " << configuration.storage_root.string() << '\n'
             << "Сертификат:      " << tls->certificate.string() << '\n'
             << "Отпечаток:       " << fingerprint.value() << '\n'
+            << "Закрепление:     " << pin.value() << '\n'
             << "Слушаю https://" << configuration.host << ':' << port << '\n'
             << std::flush;
 

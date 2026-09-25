@@ -14,5 +14,6 @@ struct TlsFiles {
 
 [[nodiscard]] core::Result<TlsFiles> load_or_create_certificate(const std::filesystem::path &directory);
 [[nodiscard]] core::Result<std::string> certificate_fingerprint(const std::filesystem::path &certificate);
+[[nodiscard]] core::Result<std::string> key_pin(const std::filesystem::path &certificate);
 
 } // namespace dgds::app

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 #include <string_view>
 #include <sys/types.h>
 
@@ -24,11 +25,13 @@ public:
   void stop();
 
   [[nodiscard]] int port() const { return m_port; }
+  [[nodiscard]] const std::string &banner() const { return m_banner; }
   [[nodiscard]] const std::filesystem::path &root() const { return m_root; }
   [[nodiscard]] std::filesystem::path certificate() const { return m_root / "tls" / "server.crt"; }
 
 private:
   std::filesystem::path m_root;
+  std::string m_banner;
   pid_t m_child = -1;
   int m_port = 0;
 };

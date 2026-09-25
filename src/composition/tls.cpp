@@ -1,6 +1,7 @@
 #include "tls.h"
 
 #include <openssl/bio.h>
+#include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
@@ -12,6 +13,7 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <string>
 #include <sys/file.h>
 #include <sys/stat.h>
@@ -29,6 +31,10 @@ constexpr long k_valid_seconds = 10L * 365 * 24 * 60 * 60;
 constexpr int k_serial = 1;
 constexpr std::size_t k_fingerprint_size = 32;
 constexpr unsigned char k_low_nibble_mask = 0x0F;
+
+void release_encoded(unsigned char *bytes) { OPENSSL_free(bytes); }
+
+using EncodedBytes = std::unique_ptr<unsigned char, void (*)(unsigned char *)>;
 constexpr const char *k_pending_suffix = ".pending";
 constexpr const char *k_lock_name = "tls.lock";
 constexpr mode_t k_key_mode = 0600;
@@ -274,6 +280,52 @@ core::Result<TlsFiles> load_or_create_certificate(const std::filesystem::path &d
   }
 
   return files;
+}
+
+core::Result<std::string> key_pin(const std::filesystem::path &certificate) {
+  const BioHandle input{BIO_new_file(certificate.c_str(), "r")};
+
+  if (input.get() == nullptr) {
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
+  const CertificateHandle parsed{PEM_read_bio_X509(input.get(), nullptr, nullptr, nullptr)};
+
+  if (parsed.get() == nullptr) {
+    return std::unexpected(core::CoreError::crypto_failed);
+  }
+
+  X509_PUBKEY *public_key = X509_get_X509_PUBKEY(parsed.get());
+
+  if (public_key == nullptr) {
+    return std::unexpected(core::CoreError::crypto_failed);
+  }
+
+  unsigned char *encoded = nullptr;
+  const int length = i2d_X509_PUBKEY(public_key, &encoded);
+  const EncodedBytes owned{encoded, release_encoded};
+
+  if (length <= 0) {
+    return std::unexpected(core::CoreError::crypto_failed);
+  }
+
+  std::array<unsigned char, k_fingerprint_size> digest{};
+  unsigned int written = 0;
+
+  if (EVP_Digest(owned.get(), static_cast<std::size_t>(length), digest.data(), &written, EVP_sha256(), nullptr) != 1 ||
+      written != k_fingerprint_size) {
+    return std::unexpected(core::CoreError::crypto_failed);
+  }
+
+  std::string text;
+  constexpr char k_digits[] = "0123456789abcdef";
+
+  for (const unsigned char byte : digest) {
+    text.push_back(k_digits[byte >> 4]);
+    text.push_back(k_digits[byte & k_low_nibble_mask]);
+  }
+
+  return text;
 }
 
 core::Result<std::string> certificate_fingerprint(const std::filesystem::path &certificate) {
