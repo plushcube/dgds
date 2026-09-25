@@ -247,17 +247,39 @@ TEST_F(SurfaceTest, RejectsDraftFieldOutsideAllowedLength) {
 
 TEST_F(SurfaceTest, RejectsContentLargerThanLimit) {
   const std::string credentials = credentials_of(account_of("автор"));
+  const std::string content(dgds::core::k_max_content_bytes + 1, 'x');
+
+  const auto keys = generate_author_key();
+  ASSERT_TRUE(keys.has_value());
+
+  const auto identity = dgds::core::content_identity(content);
+  ASSERT_TRUE(identity.has_value());
+
+  const auto signature = sign_author(identity.value(), "автор", keys->private_key);
+  ASSERT_TRUE(signature.has_value());
 
   const Json request{{"credentials", Json::parse(credentials)},
-                     {"draft", Json{{"title", std::string(k_title)},
-                                    {"file_name", "файл.txt"},
-                                    {"content", std::string(dgds::core::k_max_content_bytes + 1, 'x')}}},
-                     {"author_key", std::string(64, 'a')},
-                     {"signature", std::string(128, 'b')}};
+                     {"draft", Json{{"title", std::string(k_title)}, {"file_name", "файл.txt"}, {"content", content}}},
+                     {"author_key", to_hex(keys->public_key.data(), keys->public_key.size())},
+                     {"signature", to_hex(signature->data(), signature->size())}};
 
   const auto rejected = response_of(m_surface.publish(request_of(request)));
 
-  EXPECT_EQ(rejected.at("error").at("code").get<std::string>(), "request_malformed");
+  EXPECT_TRUE(rejected.contains("error")) << rejected.dump();
+
+  if (rejected.contains("error")) {
+    EXPECT_EQ(rejected.at("error").at("code").get<std::string>(), "request_malformed");
+  }
+
+  EXPECT_FALSE(std::filesystem::exists(m_root / "blobs")) << "появился шифротекст";
+  EXPECT_FALSE(std::filesystem::exists(m_root / "keys")) << "появился ключ файла";
+  EXPECT_FALSE(std::filesystem::exists(m_root / "master.key")) << "появился мастер-ключ";
+  EXPECT_FALSE(std::filesystem::exists(m_root / "identities")) << "идентификатор контента оказался занят";
+
+  const auto publications = m_metadata.publications();
+
+  ASSERT_TRUE(publications.has_value());
+  EXPECT_TRUE(publications->empty()) << "появилась запись публикации";
 }
 
 TEST_F(SurfaceTest, RunsScenarioAcrossEveryOperation) {
