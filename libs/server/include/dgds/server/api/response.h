@@ -8,8 +8,14 @@
 
 namespace dgds::server::api {
 
-[[nodiscard]] std::string ok(core::Content data);
-[[nodiscard]] std::string failure(ProtocolError error);
-[[nodiscard]] std::string failure(core::CoreError error);
+struct SurfaceResult {
+  bool accepted = false;
+  core::Content code;
+  std::string body;
+};
+
+[[nodiscard]] SurfaceResult ok(core::Content data);
+[[nodiscard]] SurfaceResult failure(ProtocolError error);
+[[nodiscard]] SurfaceResult failure(core::CoreError error);
 
 } // namespace dgds::server::api

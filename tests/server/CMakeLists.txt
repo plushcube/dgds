@@ -1,4 +1,5 @@
 dgds_add_test_area(server api_surface_test.cpp
+                          http_binding_test.cpp
                           attribution_service_test.cpp
                           catalog_service_test.cpp
                           delivery_service_test.cpp

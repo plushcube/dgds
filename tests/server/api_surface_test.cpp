@@ -65,6 +65,7 @@ using dgds::server::UserService;
 using dgds::server::api::code_of;
 using dgds::server::api::ProtocolError;
 using dgds::server::api::Surface;
+using dgds::server::api::SurfaceResult;
 using dgds::stubs::FileBlobStore;
 using dgds::stubs::FileIdentityRegistry;
 using dgds::stubs::FileKeyStore;
@@ -157,6 +158,8 @@ protected:
     return std::filesystem::temp_directory_path() /
            ("dgds-surface-" + std::to_string(::getpid()) + "-" + std::to_string(counter++));
   }
+
+  [[nodiscard]] Json response_of(const SurfaceResult &result) { return response_of(result.body); }
 
   [[nodiscard]] Json response_of(const std::string &wire) {
     const Json parsed = Json::parse(wire);

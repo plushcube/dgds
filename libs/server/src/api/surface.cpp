@@ -43,9 +43,9 @@ core::Result<core::UserId> Surface::authorized(const core::Credentials &credenti
   return user_id.value();
 }
 
-std::string Surface::unknown_operation() { return failure(ProtocolError::operation_unknown); }
+SurfaceResult Surface::unknown_operation() { return failure(ProtocolError::operation_unknown); }
 
-std::string Surface::register_user(core::Content body) {
+SurfaceResult Surface::register_user(core::Content body) {
   if (const auto failure_code = version_failure(body); failure_code.has_value()) {
     return failure(failure_code.value());
   }
@@ -65,7 +65,7 @@ std::string Surface::register_user(core::Content body) {
   return ok(encode(account.value()));
 }
 
-std::string Surface::log_in(core::Content body) {
+SurfaceResult Surface::log_in(core::Content body) {
   if (const auto failure_code = version_failure(body); failure_code.has_value()) {
     return failure(failure_code.value());
   }
@@ -85,7 +85,7 @@ std::string Surface::log_in(core::Content body) {
   return ok(encode(credentials.value()));
 }
 
-std::string Surface::catalog(core::Content body) {
+SurfaceResult Surface::catalog(core::Content body) {
   if (const auto failure_code = version_failure(body); failure_code.has_value()) {
     return failure(failure_code.value());
   }
@@ -99,7 +99,7 @@ std::string Surface::catalog(core::Content body) {
   return ok(encode(summaries.value()));
 }
 
-std::string Surface::publish(core::Content body) {
+SurfaceResult Surface::publish(core::Content body) {
   if (const auto failure_code = version_failure(body); failure_code.has_value()) {
     return failure(failure_code.value());
   }
@@ -133,7 +133,7 @@ std::string Surface::publish(core::Content body) {
   return ok(encode_id(publication->publication_id));
 }
 
-std::string Surface::author_publications(core::Content body) {
+SurfaceResult Surface::author_publications(core::Content body) {
   if (const auto failure_code = version_failure(body); failure_code.has_value()) {
     return failure(failure_code.value());
   }
@@ -159,7 +159,7 @@ std::string Surface::author_publications(core::Content body) {
   return ok(encode(summaries.value()));
 }
 
-std::string Surface::buy(core::Content body) {
+SurfaceResult Surface::buy(core::Content body) {
   if (const auto failure_code = version_failure(body); failure_code.has_value()) {
     return failure(failure_code.value());
   }
@@ -187,7 +187,7 @@ std::string Surface::buy(core::Content body) {
   return ok(encode(receipt.value()));
 }
 
-std::string Surface::purchases(core::Content body) {
+SurfaceResult Surface::purchases(core::Content body) {
   if (const auto failure_code = version_failure(body); failure_code.has_value()) {
     return failure(failure_code.value());
   }
@@ -213,7 +213,7 @@ std::string Surface::purchases(core::Content body) {
   return ok(encode(summaries.value()));
 }
 
-std::string Surface::restore_receipt(core::Content body) {
+SurfaceResult Surface::restore_receipt(core::Content body) {
   if (const auto failure_code = version_failure(body); failure_code.has_value()) {
     return failure(failure_code.value());
   }
@@ -241,7 +241,7 @@ std::string Surface::restore_receipt(core::Content body) {
   return ok(encode(receipt.value()));
 }
 
-std::string Surface::context_identity(core::Content body) {
+SurfaceResult Surface::context_identity(core::Content body) {
   if (const auto failure_code = version_failure(body); failure_code.has_value()) {
     return failure(failure_code.value());
   }
@@ -268,7 +268,7 @@ std::string Surface::context_identity(core::Content body) {
   return ok(encode(identity.value()));
 }
 
-std::string Surface::fetch_package(core::Content body) {
+SurfaceResult Surface::fetch_package(core::Content body) {
   if (const auto failure_code = version_failure(body); failure_code.has_value()) {
     return failure(failure_code.value());
   }

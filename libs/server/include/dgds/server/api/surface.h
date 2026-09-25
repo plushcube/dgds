@@ -3,6 +3,7 @@
 #include <dgds/core/models/content.h>
 #include <dgds/core/models/timestamp.h>
 #include <dgds/server/api/errors.h>
+#include <dgds/server/api/response.h>
 #include <dgds/server/middleware/rate_limiter.h>
 #include <dgds/server/services/catalog_service.h>
 #include <dgds/server/services/delivery_service.h>
@@ -27,18 +28,18 @@ public:
       : m_users(users), m_sessions(sessions), m_catalog(catalog), m_publications(publications), m_purchases(purchases),
         m_delivery(delivery), m_limiter(limiter), m_clock(std::move(clock)) {}
 
-  [[nodiscard]] std::string register_user(core::Content body);
-  [[nodiscard]] std::string log_in(core::Content body);
-  [[nodiscard]] std::string catalog(core::Content body);
-  [[nodiscard]] std::string publish(core::Content body);
-  [[nodiscard]] std::string author_publications(core::Content body);
-  [[nodiscard]] std::string buy(core::Content body);
-  [[nodiscard]] std::string purchases(core::Content body);
-  [[nodiscard]] std::string restore_receipt(core::Content body);
-  [[nodiscard]] std::string context_identity(core::Content body);
-  [[nodiscard]] std::string fetch_package(core::Content body);
+  [[nodiscard]] SurfaceResult register_user(core::Content body);
+  [[nodiscard]] SurfaceResult log_in(core::Content body);
+  [[nodiscard]] SurfaceResult catalog(core::Content body);
+  [[nodiscard]] SurfaceResult publish(core::Content body);
+  [[nodiscard]] SurfaceResult author_publications(core::Content body);
+  [[nodiscard]] SurfaceResult buy(core::Content body);
+  [[nodiscard]] SurfaceResult purchases(core::Content body);
+  [[nodiscard]] SurfaceResult restore_receipt(core::Content body);
+  [[nodiscard]] SurfaceResult context_identity(core::Content body);
+  [[nodiscard]] SurfaceResult fetch_package(core::Content body);
 
-  [[nodiscard]] static std::string unknown_operation();
+  [[nodiscard]] static SurfaceResult unknown_operation();
 
 private:
   [[nodiscard]] std::optional<ProtocolError> version_failure(core::Content body);

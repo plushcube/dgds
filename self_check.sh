@@ -19,6 +19,11 @@ if ! ./docs/architecture/check_renders.sh; then
     exit 1
 fi
 
+echo "  Checking layers..."
+if ! ./check_layers.sh; then
+    exit 1
+fi
+
 echo "  Building..."
 cmake -S . -B .build >/dev/null
 cmake --build .build --parallel >/dev/null
