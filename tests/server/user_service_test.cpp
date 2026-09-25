@@ -6,12 +6,14 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <set>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 
@@ -114,7 +116,7 @@ TEST_F(UserServiceTest, RejectsUnknownName) {
   EXPECT_EQ(credentials.error(), CoreError::user_not_found);
 }
 
-TEST_F(UserServiceTest, IssuesDistinctTokens) {
+TEST_F(UserServiceTest, ReplacesTokenOnRepeatedLogIn) {
   const auto account = m_service.register_user("автор");
   ASSERT_TRUE(account.has_value());
 
@@ -125,13 +127,32 @@ TEST_F(UserServiceTest, IssuesDistinctTokens) {
   ASSERT_TRUE(second.has_value());
   EXPECT_NE(first->token, second->token);
 
-  const auto first_user = m_sessions.resolve(first->token);
-  const auto second_user = m_sessions.resolve(second->token);
+  const auto stale = m_sessions.resolve(first->token);
+  const auto current = m_sessions.resolve(second->token);
 
-  ASSERT_TRUE(first_user.has_value());
-  ASSERT_TRUE(second_user.has_value());
-  EXPECT_EQ(first_user.value(), account->user_id);
-  EXPECT_EQ(second_user.value(), account->user_id);
+  ASSERT_FALSE(stale.has_value()) << "прежний токен должен перестать действовать";
+  EXPECT_EQ(stale.error(), CoreError::authorization_failed);
+
+  ASSERT_TRUE(current.has_value());
+  EXPECT_EQ(current.value(), account->user_id);
+}
+
+TEST_F(UserServiceTest, StopsResolvingExpiredSession) {
+  SessionStore sessions{std::chrono::seconds{1}};
+
+  const auto account = m_service.register_user("автор");
+  ASSERT_TRUE(account.has_value());
+
+  const auto credentials = sessions.issue(account->user_id);
+  ASSERT_TRUE(credentials.has_value());
+  ASSERT_TRUE(sessions.resolve(credentials->token).has_value());
+
+  std::this_thread::sleep_for(std::chrono::milliseconds{1100});
+
+  const auto expired = sessions.resolve(credentials->token);
+
+  ASSERT_FALSE(expired.has_value());
+  EXPECT_EQ(expired.error(), CoreError::authorization_failed);
 }
 
 TEST_F(UserServiceTest, RejectsUnknownToken) {
