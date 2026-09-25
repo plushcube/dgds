@@ -1,0 +1,32 @@
+services:
+  dgds:
+    build: .
+    image: dgds:local
+    ports:
+      - "127.0.0.1:8443:8443"
+    volumes:
+      - dgds-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - --fail
+        - --silent
+        - --show-error
+        - --cacert
+        - /data/tls/server.crt
+        - --request
+        - POST
+        - --header
+        - "Content-Type: application/json"
+        - --data
+        - '{"version":1}'
+        - https://127.0.0.1:8443/catalog
+      interval: 10s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
+volumes:
+  dgds-data:
