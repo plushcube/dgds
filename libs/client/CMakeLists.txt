@@ -1,10 +1,12 @@
-add_library(dgds-client STATIC "src/client.cpp")
+add_library(dgds-client STATIC "src/client.cpp"
+                             "src/http/pinned_client.cpp"
+                             "src/http/server_trust.cpp")
 add_library(dgds::client ALIAS dgds-client)
 
 target_include_directories(
   dgds-client PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 target_link_libraries(dgds-client
-                      PUBLIC dgds::core
+                      PUBLIC dgds::core httplib::httplib
                       PRIVATE dgds::warnings)
 
 if(APPLE)

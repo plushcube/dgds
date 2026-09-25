@@ -1,112 +1,36 @@
+#include "server_process.h"
+
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
 #include <gtest/gtest.h>
 
-#include <atomic>
-#include <cstdio>
-#include <cstdlib>
 #include <filesystem>
-#include <poll.h>
 #include <string>
-#include <sys/wait.h>
-#include <unistd.h>
 
 namespace {
 
 using Json = nlohmann::json;
 
-constexpr int k_readiness_timeout_ms = 10000;
-constexpr const char *k_listen_marker = "Слушаю https://127.0.0.1:";
-
 class LiveServerTest : public ::testing::Test {
 protected:
-  LiveServerTest() : m_root(temporary_root()) { std::filesystem::create_directories(m_root); }
-
-  void SetUp() override { start_server(); }
+  void SetUp() override { ASSERT_TRUE(m_server.start(dgds::test::ServerProcess::temporary_root("dgds-live"))); }
 
   void TearDown() override {
-    stop_server();
-    std::filesystem::remove_all(m_root);
-  }
-
-  static std::filesystem::path temporary_root() {
-    return std::filesystem::temp_directory_path() /
-           ("dgds-live-" + std::to_string(::getpid()) + "-" + std::to_string(counter++));
-  }
-
-  void start_server() {
-    int pipes[2] = {-1, -1};
-    ASSERT_EQ(pipe(pipes), 0);
-
-    const pid_t child = fork();
-    ASSERT_GE(child, 0);
-
-    if (child == 0) {
-      dup2(pipes[1], STDOUT_FILENO);
-      close(pipes[0]);
-      close(pipes[1]);
-      execl(DGDS_SERVER_PATH, DGDS_SERVER_PATH, "--root", m_root.c_str(), "--port", "0", nullptr);
-      _exit(127);
-    }
-
-    close(pipes[1]);
-    m_child = child;
-
-    FILE *output = fdopen(pipes[0], "r");
-    ASSERT_NE(output, nullptr);
-
-    pollfd readable{.fd = pipes[0], .events = POLLIN, .revents = 0};
-    ASSERT_GT(poll(&readable, 1, k_readiness_timeout_ms), 0) << "сервер не объявил адрес за отведённое время";
-
-    char buffer[512] = {};
-    int port = 0;
-
-    while (fgets(buffer, sizeof(buffer), output) != nullptr) {
-      const std::string line{buffer};
-      const std::size_t marker = line.find(k_listen_marker);
-
-      if (marker == std::string::npos) {
-        continue;
-      }
-
-      port = std::atoi(line.substr(marker + std::string(k_listen_marker).size()).c_str());
-      break;
-    }
-
-    fclose(output);
-
-    ASSERT_GT(port, 0);
-    m_port = port;
-  }
-
-  void stop_server() {
-    if (m_child <= 0) {
-      return;
-    }
-
-    kill(m_child, SIGTERM);
-
-    int status = 0;
-    waitpid(m_child, &status, 0);
-    m_child = -1;
+    m_server.stop();
+    std::filesystem::remove_all(m_server.root());
   }
 
   [[nodiscard]] httplib::Result post(const std::string &path, const std::string &body) {
-    httplib::SSLClient client{"127.0.0.1", m_port};
-    client.set_ca_cert_path((m_root / "tls" / "server.crt").string());
+    httplib::SSLClient client{"127.0.0.1", m_server.port()};
+    client.set_ca_cert_path(m_server.certificate().string());
     client.enable_server_certificate_verification(true);
     client.set_connection_timeout(5);
 
     return client.Post(path, body, "application/json");
   }
 
-  std::filesystem::path m_root;
-  pid_t m_child = -1;
-  int m_port = 0;
-
-private:
-  static inline std::atomic<unsigned> counter{0};
+  dgds::test::ServerProcess m_server;
 };
 
 TEST_F(LiveServerTest, AnswersOverTlsWithVerifiedCertificate) {
@@ -130,13 +54,14 @@ TEST_F(LiveServerTest, RefusesMalformedRequest) {
 }
 
 TEST_F(LiveServerTest, KeepsCertificateBetweenRuns) {
-  const std::filesystem::path certificate = m_root / "tls" / "server.crt";
+  const std::filesystem::path certificate = m_server.certificate();
   ASSERT_TRUE(std::filesystem::exists(certificate));
 
   const auto issued = std::filesystem::last_write_time(certificate);
+  const std::filesystem::path root = m_server.root();
 
-  stop_server();
-  start_server();
+  m_server.stop();
+  ASSERT_TRUE(m_server.start(root));
 
   EXPECT_EQ(std::filesystem::last_write_time(certificate), issued);
 
