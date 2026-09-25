@@ -1,3 +1,5 @@
+#include "server_process.h"
+
 #include <dgds/core/identity/canonical_form.h>
 #include <dgds/server/models/attribution.h>
 #include <dgds/server/services/attribution_service.h>
@@ -21,6 +23,7 @@ using dgds::core::canonical_form;
 using dgds::server::AccessKind;
 using dgds::server::AttributionService;
 using dgds::stubs::FileMetadataRegistry;
+using dgds::test::ServerProcess;
 
 constexpr std::string_view k_marker = "демонстрационная строка";
 
@@ -54,7 +57,10 @@ protected:
     std::ofstream(m_text, std::ios::binary) << sample_text();
   }
 
+  void SetUp() override { ASSERT_TRUE(m_server.start(m_root / "server")); }
+
   void TearDown() override {
+    m_server.stop();
     std::filesystem::remove_all(m_root);
     std::filesystem::remove(m_text);
   }
@@ -65,8 +71,9 @@ protected:
   }
 
   [[nodiscard]] RunResult run(std::string_view arguments) const {
-    const std::string command =
-        "'" + std::string(DGDS_EXAMPLE_PATH) + "' --root '" + m_root.string() + "' " + std::string(arguments) + " 2>&1";
+    const std::string command = "'" + std::string(DGDS_EXAMPLE_PATH) + "' --certificate '" +
+                                m_server.certificate().string() + "' --port " + std::to_string(m_server.port()) +
+                                " --device '" + (m_root / "device").string() + "' " + std::string(arguments) + " 2>&1";
     FILE *pipe = popen(command.c_str(), "r");
     EXPECT_NE(pipe, nullptr);
 
@@ -85,6 +92,7 @@ protected:
 
   std::filesystem::path m_root;
   std::filesystem::path m_text;
+  ServerProcess m_server;
 
 private:
   static inline std::atomic<unsigned> counter{0};
@@ -94,6 +102,8 @@ TEST_F(ExampleRunTest, PrintsPurchasedContentAndLeavesNoPlaintext) {
   const RunResult result = run("--text '" + m_text.string() + "'");
 
   ASSERT_EQ(result.status, 0) << result.output;
+  EXPECT_NE(result.output.find("Публикация"), std::string::npos);
+  EXPECT_NE(result.output.find("Каталог     1 публикаций"), std::string::npos) << result.output;
   EXPECT_NE(canonical_form(result.output).find(k_marker), std::string::npos);
 
   for (const auto &entry : std::filesystem::recursive_directory_iterator(m_root)) {
@@ -123,7 +133,7 @@ TEST_F(ExampleRunTest, RefusesUnknownOption) {
   const RunResult result = run("--unknown");
 
   EXPECT_EQ(result.status, 1);
-  EXPECT_NE(result.output.find("--root"), std::string::npos);
+  EXPECT_NE(result.output.find("--certificate"), std::string::npos);
   EXPECT_EQ(canonical_form(result.output).find(k_marker), std::string::npos);
 }
 
