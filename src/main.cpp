@@ -100,7 +100,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  dgds::server::http::bind(server, surface);
+  dgds::server::http::bind(server, surface, limiter, wall_clock);
 
   const int port = configuration.port == 0
                        ? server.bind_to_any_port(configuration.host)

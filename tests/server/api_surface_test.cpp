@@ -54,8 +54,10 @@ using dgds::core::ReceiptHeader;
 using dgds::core::SealedContent;
 using dgds::core::sign_author;
 using dgds::core::to_hex;
+using dgds::core::UserId;
 using dgds::server::CatalogService;
 using dgds::server::DeliveryService;
+using dgds::server::LimitedOperation;
 using dgds::server::PublicationService;
 using dgds::server::PurchaseService;
 using dgds::server::RateLimit;
@@ -206,6 +208,21 @@ protected:
 private:
   static inline std::atomic<unsigned> counter{0};
 };
+
+TEST_F(SurfaceTest, RestartsWindowWhenClockMovesBack) {
+  RateLimiter limiter{RateLimit{.calls = 2, .window = 60}};
+  UserId user{};
+  user[0] = 1;
+
+  ASSERT_TRUE(limiter.accepted(LimitedOperation::publication, user, 1000));
+  ASSERT_TRUE(limiter.accepted(LimitedOperation::publication, user, 1001));
+  ASSERT_FALSE(limiter.accepted(LimitedOperation::publication, user, 1002));
+
+  EXPECT_TRUE(limiter.accepted(LimitedOperation::publication, user, 500))
+      << "обратный ход часов должен открывать окно заново";
+  EXPECT_TRUE(limiter.accepted(LimitedOperation::publication, user, 5000))
+      << "прямой ход часов открывает окно досрочно";
+}
 
 TEST_F(SurfaceTest, RejectsNameOutsideAllowedLength) {
   const auto too_long = response_of(m_surface.register_user(request_of(Json{{"name", std::string(257, 'x')}})));

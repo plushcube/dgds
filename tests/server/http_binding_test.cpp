@@ -25,6 +25,7 @@
 #include <atomic>
 #include <cstddef>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <thread>
 #include <unistd.h>
@@ -42,6 +43,7 @@ using dgds::server::CatalogService;
 using dgds::server::DeliveryService;
 using dgds::server::PublicationService;
 using dgds::server::PurchaseService;
+using dgds::server::RateLimit;
 using dgds::server::RateLimiter;
 using dgds::server::SessionStore;
 using dgds::server::UserService;
@@ -67,10 +69,12 @@ std::string long_text() {
 
 class HttpBindingTest : public ::testing::Test {
 protected:
-  HttpBindingTest() : m_root(temporary_root()) { std::filesystem::create_directories(m_root); }
+  explicit HttpBindingTest(RateLimit limit = RateLimit{}) : m_root(temporary_root()), m_limiter(limit) {
+    std::filesystem::create_directories(m_root);
+  }
 
   void SetUp() override {
-    bind(m_server, m_surface);
+    bind(m_server, m_surface, m_limiter, [this]() { return m_now; });
 
     m_port = m_server.bind_to_any_port("127.0.0.1");
     ASSERT_GT(m_port, 0);
@@ -134,6 +138,26 @@ protected:
 private:
   static inline std::atomic<unsigned> counter{0};
 };
+
+class AddressLimitTest : public HttpBindingTest {
+protected:
+  AddressLimitTest() : HttpBindingTest(RateLimit{.calls = 2, .window = 60}) {}
+};
+
+TEST_F(AddressLimitTest, RejectsRequestsBeyondAddressLimit) {
+  const auto first = post("/catalog", Json::object());
+  const auto second = post("/catalog", Json::object());
+  const auto third = post("/catalog", Json::object());
+
+  ASSERT_TRUE(first);
+  ASSERT_TRUE(second);
+  ASSERT_TRUE(third);
+
+  EXPECT_EQ(first->status, 200);
+  EXPECT_EQ(second->status, 200);
+  EXPECT_EQ(third->status, 429);
+  EXPECT_EQ(Json::parse(third->body).at("error").at("code").get<std::string>(), "rate_limit_exceeded");
+}
 
 TEST_F(HttpBindingTest, ServesScenarioOverHttp) {
   const auto registered = post("/register", Json{{"name", "автор"}});
