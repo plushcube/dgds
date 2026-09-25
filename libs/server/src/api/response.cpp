@@ -32,7 +32,7 @@ SurfaceResult failure(ProtocolError error) {
 }
 
 SurfaceResult failure(core::CoreError error) {
-  return SurfaceResult{.accepted = false, .code = code_of(error), .body = error_envelope(code_of(error))};
+  return SurfaceResult{.accepted = false, .code = core::code_of(error), .body = error_envelope(core::code_of(error))};
 }
 
 } // namespace dgds::server::api

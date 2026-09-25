@@ -1,4 +1,4 @@
-set(client_tests api_contract_test.cpp client_test.cpp example_run_test.cpp
+set(client_tests api_contract_test.cpp client_test.cpp example_run_test.cpp http_transport_test.cpp
                  pinned_connection_test.cpp)
 
 if(APPLE)

@@ -1,5 +1,6 @@
 #include <dgds/server/http/handler.h>
 
+#include <dgds/core/models/protocol.h>
 #include <dgds/server/api/response.h>
 
 #include <array>
@@ -41,27 +42,27 @@ const std::array<Status, 26> k_statuses{{
     {api::code_of(ProtocolError::response_malformed), 500},
     {api::code_of(ProtocolError::operation_unknown), 404},
     {api::code_of(ProtocolError::rate_limit_exceeded), 429},
-    {api::code_of(core::CoreError::authorization_failed), 401},
-    {api::code_of(core::CoreError::not_permitted), 403},
-    {api::code_of(core::CoreError::user_not_found), 404},
-    {api::code_of(core::CoreError::publication_not_found), 404},
-    {api::code_of(core::CoreError::purchase_not_found), 404},
-    {api::code_of(core::CoreError::receipt_not_found), 404},
-    {api::code_of(core::CoreError::blob_not_found), 404},
-    {api::code_of(core::CoreError::key_not_found), 404},
-    {api::code_of(core::CoreError::user_name_taken), 409},
-    {api::code_of(core::CoreError::content_duplicate), 409},
-    {api::code_of(core::CoreError::record_exists), 409},
-    {api::code_of(core::CoreError::content_mismatch), 422},
-    {api::code_of(core::CoreError::signature_invalid), 422},
-    {api::code_of(core::CoreError::authentication_failed), 422},
-    {api::code_of(core::CoreError::receipt_version_unsupported), 400},
-    {api::code_of(core::CoreError::package_version_unsupported), 400},
-    {api::code_of(core::CoreError::algorithm_unsupported), 400},
-    {api::code_of(core::CoreError::key_size_mismatch), 400},
-    {api::code_of(core::CoreError::key_malformed), 400},
-    {api::code_of(core::CoreError::mark_version_unsupported), 400},
-    {api::code_of(core::CoreError::storage_failed), 500},
+    {core::code_of(core::CoreError::authorization_failed), 401},
+    {core::code_of(core::CoreError::not_permitted), 403},
+    {core::code_of(core::CoreError::user_not_found), 404},
+    {core::code_of(core::CoreError::publication_not_found), 404},
+    {core::code_of(core::CoreError::purchase_not_found), 404},
+    {core::code_of(core::CoreError::receipt_not_found), 404},
+    {core::code_of(core::CoreError::blob_not_found), 404},
+    {core::code_of(core::CoreError::key_not_found), 404},
+    {core::code_of(core::CoreError::user_name_taken), 409},
+    {core::code_of(core::CoreError::content_duplicate), 409},
+    {core::code_of(core::CoreError::record_exists), 409},
+    {core::code_of(core::CoreError::content_mismatch), 422},
+    {core::code_of(core::CoreError::signature_invalid), 422},
+    {core::code_of(core::CoreError::authentication_failed), 422},
+    {core::code_of(core::CoreError::receipt_version_unsupported), 400},
+    {core::code_of(core::CoreError::package_version_unsupported), 400},
+    {core::code_of(core::CoreError::algorithm_unsupported), 400},
+    {core::code_of(core::CoreError::key_size_mismatch), 400},
+    {core::code_of(core::CoreError::key_malformed), 400},
+    {core::code_of(core::CoreError::mark_version_unsupported), 400},
+    {core::code_of(core::CoreError::storage_failed), 500},
 }};
 
 int status_of(core::Content code) {
