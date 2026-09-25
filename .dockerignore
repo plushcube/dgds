@@ -1,0 +1,10 @@
+.git
+.build
+.build-tsan
+build
+build-*
+.cache
+.omp
+openspec
+Testing
+install_manifest.txt
