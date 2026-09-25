@@ -1,0 +1,56 @@
+@startuml
+title DGDS — публикация контента
+
+actor "Пользователь (автор)" as user
+participant "Приложение-хост" as host
+participant "Фасад\n(ApiClient)" as facade
+participant "Транспорт\n(ApiTransport)" as transport
+participant "HTTPS-поверхность\n(контроллеры)" as surface
+participant "Middleware\nверсия, частота, авторизация" as middleware
+participant "Сценарий публикации" as services
+participant "Ядро\n(dgds-core)" as core
+participant "Адаптеры портов" as adapters
+database "Реестр идентификаторов" as identities
+database "Хранилище контента" as blobs
+database "Хранилище ключей" as keys
+database "Реестр метаданных" as metadata
+
+user -> host: файл, название, имя файла
+host -> core: канонизация и идентичность контента
+core --> host: ContentIdentity = SHA-256(C(текст))
+host -> core: подпись Ed25519 над идентичностью и именем автора
+core --> host: Signature
+note over host: Приватный ключ автора остаётся у автора:\nна сервер уходит только открытый ключ и подпись
+
+host -> facade: publish(учётные данные, черновик,\nоткрытый ключ, подпись)
+facade -> transport: publish(...)
+transport -> surface: HTTPS: черновик (название, имя файла,\nсодержимое), открытый ключ, подпись,\nучётные данные, версия протокола
+surface -> middleware: проверки запроса
+middleware -> middleware: токен → идентификатор автора
+middleware -> services: publish(автор, черновик,\nоткрытый ключ, подпись, момент времени)
+services -> core: канонизация и идентичность контента
+core --> services: ContentIdentity
+services -> core: проверка подписи автора
+core --> services: подпись верна
+services -> adapters: захватить идентификатор контента
+adapters -> identities: атомарный захват <hex идентичности>
+identities --> adapters: захвачено
+note over adapters, identities: Захваченный идентификатор не освобождается;\nповтор публикации того же контента отвергается
+services -> core: шифрование контента ключом файла
+core --> services: E_Kf(контент) со свежим nonce
+services -> adapters: сохранить блоб
+adapters -> blobs: <hex идентичности>.blob
+services -> adapters: сохранить ключ файла под мастер-ключом
+adapters -> keys: <hex идентичности>.key = E_master(Kf)
+note over services, keys: Ключ файла рождается на сервере\nи наружу не выходит
+services -> adapters: записать публикацию
+adapters -> metadata: publications/<идентификатор>.publication\n(автор, название, имя файла, размер,\nдата, идентичность, открытый ключ, подпись)
+services --> middleware: PublicationRecord
+middleware --> surface: ответ
+surface --> transport: HTTPS: PublicationId
+transport --> facade: PublicationId
+facade --> host: PublicationId
+host --> user: публикация принята
+
+note over surface, adapters: Наружу уходит только шифротекст;\nоткрытый текст покидает библиотеку единственным\nпутём — из операции получения контента
+@enduml

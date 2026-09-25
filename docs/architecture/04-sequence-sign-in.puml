@@ -1,0 +1,69 @@
+@startuml
+title DGDS — регистрация, вход и просмотр каталога
+
+actor "Пользователь" as user
+participant "Приложение-хост" as host
+participant "Фасад\n(ApiClient)" as facade
+participant "Транспорт\n(ApiTransport)" as transport
+participant "HTTPS-поверхность\n(контроллеры)" as surface
+participant "Middleware\nверсия, частота, авторизация" as middleware
+participant "Сценарии" as services
+participant "Адаптеры портов" as adapters
+database "Реестр метаданных" as metadata
+
+user -> host: имя пользователя
+host -> facade: register_user(имя)
+facade -> transport: register_user(имя)
+transport -> surface: HTTPS: регистрация (имя, версия протокола)
+surface -> middleware: проверки запроса
+middleware -> services: register_user(имя)
+services -> adapters: захватить имя
+adapters -> metadata: names/<отпечаток имени>.name\n(атомарный захват имени)
+adapters -> metadata: users/<UUID>.user (идентификатор, имя)
+metadata --> adapters: подтверждение
+adapters --> services: пользователь создан
+note over adapters, metadata: Имя занимается отдельным маркером:\nв случае двух одновременных регистраций\nс одним именем не могут пройти обе
+services --> middleware: UserAccount { идентификатор, имя }
+middleware --> surface: ответ без ошибки
+surface --> transport: HTTPS: UserAccount
+transport --> facade: UserAccount
+facade --> host: UserAccount
+host --> user: регистрация принята
+
+user -> host: вход
+host -> facade: log_in(имя)
+facade -> transport: log_in(имя)
+transport -> surface: HTTPS: вход (имя, версия)
+surface -> services: log_in(имя)
+services -> adapters: найти пользователя по имени
+adapters -> metadata: чтение names/, users/
+metadata --> adapters: UserAccount
+services -> services: выдать токен сессии
+services --> middleware: Credentials { идентификатор, токен }
+middleware --> surface: ответ
+surface --> transport: HTTPS: Credentials
+transport --> facade: Credentials
+facade --> host: Credentials
+note over facade: Токен сессии — единственное,\nчто библиотека хранит о пользователе
+
+user -> host: открыть каталог
+host -> facade: catalog()
+facade -> transport: catalog()
+transport -> surface: HTTPS: каталог (без учётных данных)
+surface -> middleware: проверки запроса
+middleware -> services: catalog()
+services -> adapters: список публикаций
+adapters -> metadata: чтение publications/
+metadata --> adapters: PublicationRecord[]
+adapters --> services: PublicationSummary[]\n(идентификатор, название, имя файла,\nразмер, дата, имя автора)
+services --> middleware: PublicationSummaries
+middleware --> surface: ответ
+surface --> transport: HTTPS: список публикаций
+transport --> facade: PublicationSummaries
+facade --> host: PublicationSummaries
+host --> user: список публикаций
+
+note over surface, services: Каталог открыт без авторизации;\nостальные операции требуют действующих учётных данных
+
+note over transport, surface: Целевой обмен учебного проекта — по сети:\nприложение-хост и сервер в разных процессах,\nHTTPS с самоподписанным сертификатом,\nклиент проверяет сертификат и закрепляет ключ сервера
+@enduml

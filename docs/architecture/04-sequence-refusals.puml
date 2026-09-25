@@ -1,0 +1,104 @@
+@startuml
+title DGDS — отказы: кто и на каком слое отказывает
+
+actor "Пользователь" as user
+participant "Приложение-хост" as host
+participant "Фасад\n(ApiClient)" as facade
+participant "Транспорт\n(ApiTransport)" as transport
+participant "HTTPS-поверхность\n(контроллеры)" as surface
+participant "Middleware" as middleware
+participant "Сценарии" as services
+participant "Ядро\n(dgds-core)" as core
+participant "Адаптеры портов" as adapters
+database "Хранилища" as stores
+
+note over user, host: Отказ приходит значением, а не исключением:\nхосту достаётся код ошибки, а не текст сообщения
+
+group Учётные данные не действуют
+    facade -> transport: защищённая операция
+    transport -> surface: HTTPS
+    surface -> middleware: проверка запроса
+    middleware -> middleware: токен не разрешается\nили принадлежит другому пользователю
+    middleware --> surface: authorization_failed
+    surface --> transport: отказ
+    transport --> facade: authorization_failed
+end
+
+group Имя занято или неизвестно
+    facade -> transport: register_user(имя)
+    transport -> surface: HTTPS
+    surface -> services: register_user(имя)
+    services -> adapters: захватить имя
+    adapters -> stores: names/<отпечаток имени>.name
+    alt маркер имени уже существует
+        adapters --> services: маркер занят
+        services --> surface: user_name_taken
+    else регистрация проходит, а входа по имени нет
+        services -> adapters: найти пользователя по имени
+        adapters --> services: не найден
+        services --> surface: user_not_found
+    end
+    surface --> transport: отказ
+    transport --> facade: отказ
+end
+
+group Публикация отвергнута
+    facade -> transport: publish(черновик, ключ, подпись)
+    transport -> surface: HTTPS
+    surface -> services: publish(...)
+    alt такой контент уже опубликован
+        services -> adapters: захватить идентификатор
+        adapters --> services: already_claimed
+        services --> surface: content_duplicate
+    else подпись не сходится
+        services -> core: проверка подписи автора
+        core --> services: подпись неверна
+        services --> surface: signature_invalid
+    end
+    surface --> transport: отказ
+    transport --> facade: отказ
+end
+
+group Покупка не проходит
+    facade -> transport: buy(публикация)
+    transport -> surface: HTTPS
+    surface -> services: buy(...)
+    services -> adapters: найти публикацию
+    adapters --> services: не найдена
+    services --> surface: publication_not_found
+    surface --> transport: отказ
+    transport --> facade: отказ
+end
+
+group Права на контекст нет
+    facade -> transport: context_identity / fetch_package
+    transport -> surface: HTTPS
+    surface -> services: разбор контекста доступа
+    services -> adapters: найти покупку, затем публикацию
+    alt покупка принадлежит другому пользователю
+        services --> surface: not_permitted
+    else ни покупки, ни публикации с таким идентификатором
+        services --> surface: purchase_not_found
+    end
+    surface --> transport: отказ
+    transport --> facade: отказ
+end
+
+group Чек на устройстве не разбирается
+    facade -> facade: разбор сохранённого чека
+    alt блока нет
+        facade --> host: receipt_not_found
+    else блок есть, но повреждён
+        facade --> host: receipt_malformed
+    end
+end
+
+group Пакет не относится к запрошенной публикации
+    facade -> transport: fetch_package(...)
+    transport --> facade: Package
+    facade -> facade: сверка идентичности пакета с ожидаемой
+    facade --> host: content_mismatch
+end
+
+note over surface, stores: Отказ не раскрывает лишнего: чужая покупка\nи отсутствие покупки различаются между собой,\nно ни то, ни другое не выдаёт чужих данных
+@enduml

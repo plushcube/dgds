@@ -16,6 +16,9 @@ jobs:
       - name: Check architecture renders
         run: ./docs/architecture/check_renders.sh
 
+      - name: Check layers
+        run: ./check_layers.sh
+
       - name: Install dependencies
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then

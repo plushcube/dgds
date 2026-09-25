@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace dgds::core {
@@ -15,5 +16,6 @@ namespace dgds::core {
 [[nodiscard]] Result<ContentIdentity> content_identity(Content content);
 [[nodiscard]] std::string to_hex(const std::uint8_t *bytes, std::size_t size);
 [[nodiscard]] std::string to_hex(const ContentIdentity &identity);
+[[nodiscard]] std::optional<ContentBuffer> from_hex(Content text);
 
 } // namespace dgds::core

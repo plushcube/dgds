@@ -35,6 +35,10 @@ enum class CoreError {
   mark_checksum_mismatch,
   mark_not_found,
   mark_not_confident,
+  connection_failed,
+  protocol_version_unsupported,
+  protocol_failure,
+  rate_limit_exceeded,
 };
 
 template <typename Value> using Result = std::expected<Value, CoreError>;
