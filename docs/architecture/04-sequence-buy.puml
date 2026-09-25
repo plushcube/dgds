@@ -1,0 +1,66 @@
+@startuml
+title DGDS — покупка публикации
+
+actor "Пользователь (покупатель)" as user
+participant "Приложение-хост" as host
+participant "Фасад\n(ApiClient)" as facade
+participant "Ключ устройства\n(DeviceKey)" as device
+participant "Транспорт\n(ApiTransport)" as transport
+participant "HTTPS-поверхность\n(контроллеры)" as surface
+participant "Middleware\nверсия, частота, авторизация" as middleware
+participant "Сценарий покупки" as services
+participant "Ядро\n(dgds-core)" as core
+participant "Адаптеры портов" as adapters
+database "Реестр метаданных" as metadata
+database "Хранилище ключей" as keys
+participant "Хранилище чека\n(ReceiptStore)" as receipts
+
+user -> host: купить публикацию
+host -> facade: buy(учётные данные, идентификатор публикации)
+facade -> device: public_key()
+device --> facade: открытый ключ устройства
+note over device: Приватный ключ устройства не покидает устройство
+facade -> transport: buy(учётные данные, публикация,\nоткрытый ключ устройства)
+transport -> surface: HTTPS: покупка (идентификатор публикации,\nоткрытый ключ устройства, версия протокола)
+surface -> middleware: проверки запроса
+middleware -> middleware: токен → идентификатор покупателя
+middleware -> services: buy(покупатель, публикация,\nоткрытый ключ устройства, момент времени)
+services -> adapters: найти покупку покупателя
+adapters -> metadata: чтение purchases/
+alt покупка уже есть
+    metadata --> adapters: PurchaseRecord
+    adapters --> services: покупка найдена
+    services -> adapters: найти чек для этого устройства
+    adapters -> metadata: receipts/<покупка>-<устройство>
+    metadata --> adapters: ReceiptRecord (прежняя обёртка)
+    note over services: Новая покупка не создаётся,\nсчётчик продаж не растёт
+else покупка новая
+    adapters --> services: purchase_not_found
+    services -> core: сгенерировать ключ покупки Kp
+    core --> services: Kp (в памяти)
+    services -> adapters: прочитать ключ файла
+    adapters -> keys: <hex идентичности>.key = E_master(Kf)
+    keys --> adapters: шифротекст
+    adapters --> services: ключ файла (в памяти)
+    services -> core: обёртка E_dev(Kp): X25519 + HKDF,\nAAD: версия, идентификатор покупки, покупатель,\nдата покупки, дата выпуска
+    core --> services: DeviceEnvelope
+    services -> core: обёртка E_Kp(Kf)
+    core --> services: SealedContent
+    services -> adapters: записать покупку
+    adapters -> metadata: purchases/<покупка>.purchase\n(покупатель, публикация, дата)
+    services -> adapters: записать чек
+    adapters -> metadata: receipts/<покупка>-<устройство>.receipt
+end
+services --> middleware: Receipt { header, обёртка ключа покупки }
+middleware --> surface: ответ
+surface --> transport: HTTPS: чек
+transport --> facade: Receipt
+facade -> facade: сериализация чека
+facade -> receipts: save(идентификатор покупки, непрозрачный блок)
+receipts --> facade: сохранено
+note over receipts: Хранилище получает только байты чека:\nни ключа, ни контента, ни разбора полей
+facade --> host: Receipt
+host --> user: покупка оформлена
+
+note over services, keys: Ключ покупки существует только в памяти выдачи\nи внутри обёртки чека; сервер его не хранит
+@enduml

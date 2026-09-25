@@ -1,0 +1,87 @@
+@startuml
+title DGDS — получение контента
+
+actor "Пользователь (покупатель)" as user
+participant "Приложение-хост" as host
+participant "Фасад\n(ApiClient)" as facade
+participant "Ключ устройства\n(DeviceKey)" as device
+participant "Хранилище чека\n(ReceiptStore)" as receipts
+participant "Транспорт\n(ApiTransport)" as transport
+participant "HTTPS-поверхность\n(контроллеры)" as surface
+participant "Middleware\nверсия, частота, авторизация" as middleware
+participant "Сценарии сервера" as services
+participant "Ядро\n(dgds-core)" as core
+participant "Адаптеры портов" as adapters
+database "Реестр метаданных" as metadata
+database "Хранилище контента" as blobs
+
+host -> facade: fetch_content(учётные данные, идентификатор покупки)
+facade -> transport: context_identity(учётные данные, контекст)
+transport -> surface: HTTPS: идентичность контекста
+surface -> middleware: проверки запроса
+middleware -> services: разбор контекста доступа
+services -> adapters: найти покупку, затем публикацию
+adapters -> metadata: чтение purchases/, publications/
+metadata --> adapters: PublicationRecord
+adapters --> services: контекст и публикация
+note over services: Право проверяется только здесь:\nни одно поле чека в решении не участвует
+services --> middleware: ContentIdentity ожидаемого контента
+middleware --> surface: ответ
+surface --> transport: HTTPS: ContentIdentity
+transport --> facade: ожидаемая идентичность
+
+facade -> receipts: load(идентификатор покупки)
+alt чек есть на устройстве
+    receipts --> facade: непрозрачный блок
+    facade -> core: decode_receipt(блок)
+    core --> facade: Receipt
+else чека нет — второе устройство
+    receipts --> facade: receipt_not_found
+    facade -> transport: restore_receipt(учётные данные,\nпокупка, открытый ключ устройства)
+    transport -> surface: HTTPS: восстановление чека
+    surface -> middleware: проверки запроса
+    middleware -> services: restore_receipt(...)
+    services -> core: новая обёртка E_dev(Kp)
+    core --> services: DeviceEnvelope
+    services -> adapters: сохранить чек
+    adapters -> metadata: receipts/<покупка>-<устройство>
+    services --> middleware: Receipt (новая дата выпуска,\nдата покупки и счётчик неизменны)
+    middleware --> surface: ответ
+    surface --> transport: HTTPS: чек
+    transport --> facade: Receipt
+    facade -> receipts: save(идентификатор покупки, блок)
+end
+
+facade -> device: open_receipt_key(чек)
+device --> facade: ключ покупки Kp
+note over device, facade: Kp живёт только в памяти библиотеки;\nв приложение-хост он не возвращается
+
+facade -> transport: fetch_package(учётные данные,\nпокупка, открытый ключ устройства)
+transport -> surface: HTTPS: запрос пакета
+surface -> middleware: проверки запроса
+middleware -> services: fetch_package(...)
+services -> adapters: найти чек этого устройства
+adapters -> metadata: receipts/<покупка>-<устройство>
+metadata --> adapters: ReceiptRecord (обёртка ключа блоба)
+services -> adapters: прочитать хранимый блоб
+adapters -> blobs: <hex идентичности>.blob
+blobs --> adapters: E_Kf(контент)
+services -> core: расшифровать и встроить метку покупки
+core --> services: E_Kf(контент с меткой)
+note over services, core: Маркированный формат уникален для покупки;\nнемаркированный отдаётся как есть
+services --> middleware: Package { блоб, E_Kp(K_blob), идентичность,\nоткрытый ключ автора, имя автора, подпись, версия }
+middleware --> surface: ответ
+surface --> transport: HTTPS: пакет
+transport --> facade: Package
+
+facade -> facade: сверка идентичности пакета с ожидаемой
+facade -> core: open_package(пакет, ключ покупки)
+core -> core: развернуть ключ блоба ключом покупки
+core -> core: расшифровать в память
+core -> core: сверить идентичность контента
+core -> core: проверить подпись автора
+core --> facade: SecureBuffer
+facade --> host: расшифрованный контент
+host --> user: содержимое публикации
+note over host: Контент не сохраняется на диск;\nбуфер стирается при уничтожении
+@enduml
