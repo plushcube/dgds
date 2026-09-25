@@ -26,6 +26,7 @@ using dgds::stubs::FileMetadataRegistry;
 using dgds::test::ServerProcess;
 
 constexpr std::string_view k_marker = "демонстрационная строка";
+constexpr std::string_view k_sample_line = "демонстрационного текста для покупателя";
 
 std::string sample_text() {
   std::string text;
@@ -105,6 +106,34 @@ protected:
 private:
   static inline std::atomic<unsigned> counter{0};
 };
+
+TEST_F(ExampleRunTest, RefusesOptionValueThatLooksLikeOption) {
+  const RunResult result = run("--text --version");
+
+  EXPECT_EQ(result.status, 1);
+  EXPECT_NE(result.output.find("--certificate"), std::string::npos);
+}
+
+TEST_F(ExampleRunTest, RunsTwiceOnSameStand) {
+  const RunResult first = run("--text '" + m_text.string() + "'");
+
+  ASSERT_EQ(first.status, 0) << first.output;
+  EXPECT_NE(first.output.find("Публикация"), std::string::npos);
+
+  const RunResult second = run("");
+
+  ASSERT_EQ(second.status, 0) << second.output;
+  EXPECT_NE(second.output.find("Публикация"), std::string::npos);
+  EXPECT_NE(canonical_form(second.output).find(k_sample_line), std::string::npos);
+}
+
+TEST_F(ExampleRunTest, ReportsUnreadableTextFile) {
+  const RunResult result = run("--text '" + (m_root / "нет-такого-файла").string() + "'");
+
+  EXPECT_EQ(result.status, 1);
+  EXPECT_NE(result.output.find("чтение файла"), std::string::npos);
+  EXPECT_EQ(canonical_form(result.output).find(k_marker), std::string::npos);
+}
 
 TEST_F(ExampleRunTest, PrintsPurchasedContentAndLeavesNoPlaintext) {
   const RunResult result = run("--text '" + m_text.string() + "'");
