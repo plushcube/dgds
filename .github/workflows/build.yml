@@ -40,3 +40,7 @@ jobs:
 
       - name: Test
         run: ctest --test-dir .build --output-on-failure
+
+      - name: Build server image
+        if: runner.os == 'Linux'
+        run: docker build --tag dgds:local --build-arg PATCH_VERSION=${{ github.run_number }} .
