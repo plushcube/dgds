@@ -137,6 +137,26 @@ TEST_F(UserServiceTest, ReplacesTokenOnRepeatedLogIn) {
   EXPECT_EQ(current.value(), account->user_id);
 }
 
+TEST_F(UserServiceTest, KeepsOtherUsersSessionsOnRepeatedLogIn) {
+  const auto first = m_service.register_user("первый");
+  const auto second = m_service.register_user("второй");
+  ASSERT_TRUE(first.has_value());
+  ASSERT_TRUE(second.has_value());
+
+  const auto first_credentials = m_service.log_in("первый");
+  const auto second_credentials = m_service.log_in("второй");
+  ASSERT_TRUE(first_credentials.has_value());
+  ASSERT_TRUE(second_credentials.has_value());
+
+  const auto renewed = m_service.log_in("первый");
+  ASSERT_TRUE(renewed.has_value());
+
+  EXPECT_FALSE(m_sessions.resolve(first_credentials->token).has_value());
+  EXPECT_TRUE(m_sessions.resolve(renewed->token).has_value());
+  EXPECT_TRUE(m_sessions.resolve(second_credentials->token).has_value())
+      << "сессия другого пользователя не должна пострадать";
+}
+
 TEST_F(UserServiceTest, StopsResolvingExpiredSession) {
   SessionStore sessions{std::chrono::seconds{1}};
 
