@@ -118,7 +118,10 @@ int main(int argc, char *argv[]) {
             << "Слушаю https://" << configuration.host << ':' << port << '\n'
             << std::flush;
 
-  server.listen_after_bind();
+  if (!server.listen_after_bind()) {
+    std::cerr << "Не удалось начать прослушивание " << configuration.host << ':' << port << '\n';
+    return 1;
+  }
 
   return 0;
 }
