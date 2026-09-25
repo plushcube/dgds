@@ -70,6 +70,22 @@ private:
   int m_port = 0;
 };
 
+TEST_F(HttpClientFixture, DeliversContentOfLimitSize) {
+  const std::string text(dgds::core::k_max_content_bytes, 'x');
+
+  const auto publication_id = publish("автор", text);
+  const auto buyer = sign_in("покупатель");
+
+  const auto receipt = m_client->buy(buyer, publication_id);
+  ASSERT_TRUE(receipt.has_value()) << dgds::core::code_of(receipt.error());
+
+  const auto content = m_client->fetch_content(buyer, receipt->header.purchase_id);
+
+  ASSERT_TRUE(content.has_value()) << dgds::core::code_of(content.error());
+  EXPECT_GE(content->view().size(), text.size());
+  EXPECT_EQ(canonical_form(content->view()), text);
+}
+
 TEST_F(HttpClientFixture, RunsPurchaseScenarioOverNetwork) {
   const std::string text = sample_content();
   const auto publication_id = publish("автор", text);
