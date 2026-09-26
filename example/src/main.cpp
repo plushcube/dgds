@@ -284,9 +284,9 @@ int main(int argc, char *argv[]) {
     return report("просмотр каталога", catalog.error());
   }
 
-  std::cout << "Каталог     " << catalog->size() << " публикаций:\n";
+  std::cout << "Каталог     " << catalog->records.size() << " из " << catalog->total << " публикаций:\n";
 
-  for (const auto &summary : catalog.value()) {
+  for (const auto &summary : catalog->records) {
     std::cout << "            " << summary.publication_id << " «" << summary.title << "» " << summary.author_name
               << ", " << summary.size << " байт\n";
   }

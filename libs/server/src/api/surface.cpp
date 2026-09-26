@@ -102,7 +102,7 @@ SurfaceResult Surface::catalog(core::Content body) {
     return failure(summaries.error());
   }
 
-  return ok(encode(request.value(), summaries.value()));
+  return ok(encode(summaries.value()));
 }
 
 SurfaceResult Surface::publish(core::Content body) {
@@ -163,7 +163,7 @@ SurfaceResult Surface::author_publications(core::Content body) {
     return failure(summaries.error());
   }
 
-  return ok(encode(request.value(), summaries.value()));
+  return ok(encode(summaries.value()));
 }
 
 SurfaceResult Surface::buy(core::Content body) {
@@ -218,7 +218,7 @@ SurfaceResult Surface::purchases(core::Content body) {
     return failure(summaries.error());
   }
 
-  return ok(encode(request.value(), summaries.value()));
+  return ok(encode(summaries.value()));
 }
 
 SurfaceResult Surface::restore_receipt(core::Content body) {

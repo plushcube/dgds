@@ -18,16 +18,6 @@ Result<core::UserId> DirectTransport::authorized(const Credentials &credentials)
   return user_id.value();
 }
 
-Result<PublicationSummaries> DirectTransport::catalog(std::size_t offset, std::size_t limit) {
-  const auto page = m_catalog.catalog(core::PageRequest{.offset = offset, .limit = limit});
-
-  if (!page.has_value()) {
-    return std::unexpected(page.error());
-  }
-
-  return page->records;
-}
-
 Result<PublicationId> DirectTransport::publish(const Credentials &credentials, const PublicationDraft &draft,
                                                const AuthorPublicKey &author_key, const Signature &signature) {
   const auto author_id = authorized(credentials);
@@ -56,21 +46,15 @@ Result<Receipt> DirectTransport::buy(const Credentials &credentials, const Publi
   return m_purchases.buy(user_id.value(), publication_id, device_key, m_clock());
 }
 
-Result<PurchaseSummaries> DirectTransport::purchases(const Credentials &credentials, std::size_t offset,
-                                                     std::size_t limit) {
+Result<core::PurchaseSummaryPage> DirectTransport::purchases(const Credentials &credentials, std::size_t offset,
+                                                             std::size_t limit) {
   const auto user_id = authorized(credentials);
 
   if (!user_id.has_value()) {
     return std::unexpected(user_id.error());
   }
 
-  const auto page = m_purchases.purchases_of(user_id.value(), core::PageRequest{.offset = offset, .limit = limit});
-
-  if (!page.has_value()) {
-    return std::unexpected(page.error());
-  }
-
-  return page->records;
+  return m_purchases.purchases_of(user_id.value(), core::PageRequest{.offset = offset, .limit = limit});
 }
 
 Result<Receipt> DirectTransport::restore_receipt(const Credentials &credentials, const PurchaseId &purchase_id,

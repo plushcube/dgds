@@ -26,9 +26,9 @@ using client::DevicePublicKey;
 using client::Package;
 using client::PublicationDraft;
 using client::PublicationId;
-using client::PublicationSummaries;
+using client::PublicationSummaryPage;
 using client::PurchaseId;
-using client::PurchaseSummaries;
+using client::PurchaseSummaryPage;
 using client::Receipt;
 using client::Result;
 using client::Signature;
@@ -48,7 +48,9 @@ public:
 
   [[nodiscard]] Result<Credentials> log_in(Content name) override { return m_users.log_in(name); }
 
-  [[nodiscard]] Result<PublicationSummaries> catalog(std::size_t offset, std::size_t limit) override;
+  [[nodiscard]] Result<PublicationSummaryPage> catalog(std::size_t offset, std::size_t limit) override {
+    return m_catalog.catalog(core::PageRequest{.offset = offset, .limit = limit});
+  }
 
   [[nodiscard]] Result<PublicationId> publish(const Credentials &credentials, const PublicationDraft &draft,
                                               const AuthorPublicKey &author_key, const Signature &signature) override;
@@ -56,7 +58,8 @@ public:
   [[nodiscard]] Result<Receipt> buy(const Credentials &credentials, const PublicationId &publication_id,
                                     const DevicePublicKey &device_key) override;
 
-  [[nodiscard]] Result<PurchaseSummaries> purchases(const Credentials &credentials, std::size_t, std::size_t) override;
+  [[nodiscard]] Result<PurchaseSummaryPage> purchases(const Credentials &credentials, std::size_t offset,
+                                                      std::size_t limit) override;
 
   [[nodiscard]] Result<Receipt> restore_receipt(const Credentials &credentials, const PurchaseId &purchase_id,
                                                 const DevicePublicKey &device_key) override;

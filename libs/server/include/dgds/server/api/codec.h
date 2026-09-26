@@ -30,9 +30,9 @@ namespace dgds::server::api {
 
 [[nodiscard]] std::string encode(const core::UserAccount &account);
 [[nodiscard]] std::string encode(const core::Credentials &credentials);
-[[nodiscard]] std::string encode(const core::PageRequest &request, const core::PublicationSummaryPage &page);
-[[nodiscard]] std::string encode(const core::PageRequest &request, const core::AuthorPublicationSummaryPage &page);
-[[nodiscard]] std::string encode(const core::PageRequest &request, const core::PurchaseSummaryPage &page);
+[[nodiscard]] std::string encode(const core::PublicationSummaryPage &page);
+[[nodiscard]] std::string encode(const core::AuthorPublicationSummaryPage &page);
+[[nodiscard]] std::string encode(const core::PurchaseSummaryPage &page);
 [[nodiscard]] std::string encode(const core::Receipt &receipt);
 [[nodiscard]] std::string encode(const core::Package &package);
 [[nodiscard]] std::string encode(const core::ContentIdentity &identity);

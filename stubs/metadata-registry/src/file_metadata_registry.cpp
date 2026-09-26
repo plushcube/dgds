@@ -87,7 +87,8 @@ core::Page<Record> window_of(std::vector<Record> records, std::size_t offset, st
     window.push_back(std::move(records[index]));
   }
 
-  return core::Page<Record>{.total = total, .records = std::move(window)};
+  return core::Page<Record>{
+      .request = core::PageRequest{.offset = offset, .limit = limit}, .total = total, .records = std::move(window)};
 }
 
 template <typename Record, typename Decode>
@@ -135,7 +136,8 @@ core::Result<core::Page<Record>> window_of_files(const std::filesystem::path &di
     records.push_back(std::move(record.value()));
   }
 
-  return core::Page<Record>{.total = total, .records = std::move(records)};
+  return core::Page<Record>{
+      .request = core::PageRequest{.offset = offset, .limit = limit}, .total = total, .records = std::move(records)};
 }
 
 core::CoreError release_marker(const std::filesystem::path &marker, core::CoreError original) {

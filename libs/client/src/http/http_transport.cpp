@@ -411,15 +411,22 @@ template <std::size_t Size> Json hex_json(const std::array<std::uint8_t, Size> &
   return core::to_hex(bytes.data(), bytes.size());
 }
 
-[[nodiscard]] core::Result<std::vector<core::PublicationSummary>> summaries_of(const Json &data) {
-  if (!data.is_array()) {
+template <typename Summary, typename Decode>
+[[nodiscard]] core::Result<core::Page<Summary>> page_of(const Json &data, Decode decode) {
+  const auto offset = identifier_of(data, "offset");
+  const auto limit = identifier_of(data, "limit");
+  const auto total = identifier_of(data, "total");
+  const auto items = field(data, "items");
+
+  if (!offset.has_value() || !limit.has_value() || !total.has_value() || !items.has_value() || !items->is_array()) {
     return std::unexpected(core::CoreError::protocol_failure);
   }
 
-  std::vector<core::PublicationSummary> summaries;
+  std::vector<Summary> summaries;
+  summaries.reserve(items->size());
 
-  for (const Json &entry : data) {
-    const auto summary = summary_of(entry);
+  for (const Json &entry : items.value()) {
+    const auto summary = decode(entry);
 
     if (!summary.has_value()) {
       return std::unexpected(summary.error());
@@ -428,7 +435,10 @@ template <std::size_t Size> Json hex_json(const std::array<std::uint8_t, Size> &
     summaries.push_back(summary.value());
   }
 
-  return summaries;
+  return core::Page<Summary>{.request = core::PageRequest{.offset = static_cast<std::size_t>(offset.value()),
+                                                          .limit = static_cast<std::size_t>(limit.value())},
+                             .total = static_cast<std::size_t>(total.value()),
+                             .records = std::move(summaries)};
 }
 
 } // namespace
@@ -453,7 +463,7 @@ Result<Credentials> HttpTransport::log_in(Content name) {
   return credentials_of(data.value());
 }
 
-Result<PublicationSummaries> HttpTransport::catalog(std::size_t offset, std::size_t limit) {
+Result<core::PublicationSummaryPage> HttpTransport::catalog(std::size_t offset, std::size_t limit) {
   const Json body{{"offset", std::to_string(offset)}, {"limit", std::to_string(limit)}};
   const auto data = exchange(m_endpoint, m_trust, "/catalog", body);
 
@@ -461,13 +471,7 @@ Result<PublicationSummaries> HttpTransport::catalog(std::size_t offset, std::siz
     return std::unexpected(data.error());
   }
 
-  const auto items = field(data.value(), "items");
-
-  if (!items.has_value()) {
-    return std::unexpected(core::CoreError::protocol_failure);
-  }
-
-  return summaries_of(items.value());
+  return page_of<core::PublicationSummary>(data.value(), summary_of);
 }
 
 Result<PublicationId> HttpTransport::publish(const Credentials &credentials, const PublicationDraft &draft,
@@ -505,8 +509,8 @@ Result<Receipt> HttpTransport::buy(const Credentials &credentials, const Publica
   return receipt_of(data.value());
 }
 
-Result<PurchaseSummaries> HttpTransport::purchases(const Credentials &credentials, std::size_t offset,
-                                                   std::size_t limit) {
+Result<core::PurchaseSummaryPage> HttpTransport::purchases(const Credentials &credentials, std::size_t offset,
+                                                           std::size_t limit) {
   const Json body{{"credentials", credentials_json(credentials)},
                   {"offset", std::to_string(offset)},
                   {"limit", std::to_string(limit)}};
@@ -516,25 +520,7 @@ Result<PurchaseSummaries> HttpTransport::purchases(const Credentials &credential
     return std::unexpected(data.error());
   }
 
-  const auto items = field(data.value(), "items");
-
-  if (!items.has_value() || !items->is_array()) {
-    return std::unexpected(core::CoreError::protocol_failure);
-  }
-
-  std::vector<core::PurchaseSummary> summaries;
-
-  for (const Json &entry : items.value()) {
-    const auto summary = purchase_summary_of(entry);
-
-    if (!summary.has_value()) {
-      return std::unexpected(summary.error());
-    }
-
-    summaries.push_back(summary.value());
-  }
-
-  return summaries;
+  return page_of<core::PurchaseSummary>(data.value(), purchase_summary_of);
 }
 
 Result<Receipt> HttpTransport::restore_receipt(const Credentials &credentials, const PurchaseId &purchase_id,

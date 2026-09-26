@@ -14,7 +14,7 @@ core::Result<core::PublicationSummaryPage> CatalogService::catalog(core::PageReq
     return std::unexpected(page.error());
   }
 
-  core::PublicationSummaryPage summaries{.total = page->total, .records = {}};
+  core::PublicationSummaryPage summaries{.request = request, .total = page->total, .records = {}};
   summaries.records.reserve(page->records.size());
 
   for (const auto &record : page->records) {
@@ -32,7 +32,7 @@ core::Result<core::AuthorPublicationSummaryPage> CatalogService::author_publicat
     return std::unexpected(page.error());
   }
 
-  core::AuthorPublicationSummaryPage summaries{.total = page->total, .records = {}};
+  core::AuthorPublicationSummaryPage summaries{.request = request, .total = page->total, .records = {}};
   summaries.records.reserve(page->records.size());
 
   for (const auto &record : page->records) {

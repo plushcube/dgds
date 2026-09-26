@@ -141,7 +141,7 @@ TEST_F(ExampleRunTest, PrintsPurchasedContentAndLeavesNoPlaintext) {
 
   ASSERT_EQ(result.status, 0) << result.output;
   EXPECT_NE(result.output.find("Публикация"), std::string::npos);
-  EXPECT_NE(result.output.find("Каталог     1 публикаций"), std::string::npos) << result.output;
+  EXPECT_NE(result.output.find("Каталог     1 из 1 публикаций"), std::string::npos) << result.output;
   EXPECT_NE(canonical_form(result.output).find(k_marker), std::string::npos);
 
   EXPECT_TRUE(std::filesystem::exists(device() / "device.key")) << "устройство не создало ключ";

@@ -61,8 +61,8 @@ adapters --> services: окно записей и общее число публ
 services --> middleware: PublicationSummaryPage\n(идентификатор, название, имя файла,\nразмер, дата, имя автора)
 middleware --> surface: ответ
 surface --> transport: HTTPS: окно списка\n(смещение, размер, общее число, записи)
-transport --> facade: PublicationSummaries
-facade --> host: PublicationSummaries
+transport --> facade: PublicationSummaryPage
+facade --> host: PublicationSummaryPage
 host --> user: первое окно каталога
 
 note over adapters, metadata: Каталог читает только записи окна:\nимена дают идентификаторы, порядок по возрастанию,\nзаписи за окном не читаются вовсе

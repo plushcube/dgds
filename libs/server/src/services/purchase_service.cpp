@@ -162,7 +162,7 @@ core::Result<core::PurchaseSummaryPage> PurchaseService::purchases_of(const core
     return std::unexpected(page.error());
   }
 
-  core::PurchaseSummaryPage summaries{.total = page->total, .records = {}};
+  core::PurchaseSummaryPage summaries{.request = request, .total = page->total, .records = {}};
   summaries.records.reserve(page->records.size());
 
   for (const auto &purchase : page->records) {

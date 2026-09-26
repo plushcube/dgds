@@ -94,10 +94,13 @@ TEST_F(HttpClientFixture, RunsPurchaseScenarioOverNetwork) {
 
   const auto catalog = m_client->catalog();
   ASSERT_TRUE(catalog.has_value());
-  ASSERT_EQ(catalog->size(), 1U);
-  EXPECT_EQ(catalog->front().publication_id, publication_id);
-  EXPECT_EQ(catalog->front().title, std::string(k_publication_title));
-  EXPECT_EQ(catalog->front().author_name, "автор");
+  EXPECT_EQ(catalog->request.offset, 0U);
+  EXPECT_EQ(catalog->request.limit, dgds::core::k_default_page_size);
+  EXPECT_EQ(catalog->total, 1U);
+  ASSERT_EQ(catalog->records.size(), 1U);
+  EXPECT_EQ(catalog->records.front().publication_id, publication_id);
+  EXPECT_EQ(catalog->records.front().title, std::string(k_publication_title));
+  EXPECT_EQ(catalog->records.front().author_name, "автор");
 
   const auto receipt = m_client->buy(buyer, publication_id);
   ASSERT_TRUE(receipt.has_value());
@@ -105,12 +108,38 @@ TEST_F(HttpClientFixture, RunsPurchaseScenarioOverNetwork) {
 
   const auto purchases = m_client->purchases(buyer);
   ASSERT_TRUE(purchases.has_value());
-  ASSERT_EQ(purchases->size(), 1U);
-  EXPECT_EQ(purchases->front().publication.publication_id, publication_id);
+  EXPECT_EQ(purchases->request.offset, 0U);
+  EXPECT_EQ(purchases->request.limit, dgds::core::k_default_page_size);
+  EXPECT_EQ(purchases->total, 1U);
+  ASSERT_EQ(purchases->records.size(), 1U);
+  EXPECT_EQ(purchases->records.front().publication.publication_id, publication_id);
 
   const auto content = m_client->fetch_content(buyer, receipt->header.purchase_id);
   ASSERT_TRUE(content.has_value()) << dgds::core::code_of(content.error());
   EXPECT_EQ(canonical_form(content->view()), text);
+}
+
+TEST_F(HttpClientFixture, ReturnsCatalogWindowOverNetwork) {
+  ASSERT_NE(publish("автор", sample_content() + "первая"), 0U);
+  ASSERT_NE(publish("автор", sample_content() + "вторая"), 0U);
+  ASSERT_NE(publish("автор", sample_content() + "третья"), 0U);
+
+  const auto first = m_transport->catalog(0, 2);
+
+  ASSERT_TRUE(first.has_value());
+  EXPECT_EQ(first->request.offset, 0U);
+  EXPECT_EQ(first->request.limit, 2U);
+  EXPECT_EQ(first->total, 3U);
+  ASSERT_EQ(first->records.size(), 2U);
+
+  const auto last = m_transport->catalog(2, 2);
+
+  ASSERT_TRUE(last.has_value());
+  EXPECT_EQ(last->request.offset, 2U);
+  EXPECT_EQ(last->request.limit, 2U);
+  EXPECT_EQ(last->total, 3U);
+  ASSERT_EQ(last->records.size(), 1U);
+  EXPECT_LT(first->records.back().publication_id, last->records.front().publication_id);
 }
 
 TEST_F(HttpClientFixture, RestoresReceiptOverNetwork) {
@@ -195,10 +224,10 @@ TEST_F(HttpClientFixture, RefusesUnsupportedProtocolVersion) {
   ASSERT_TRUE(trust.has_value());
 
   HttpTransport transport{Endpoint{.host = "127.0.0.1", .port = peer.port()}, trust.value()};
-  const auto summaries = transport.catalog(0, dgds::core::k_default_page_size);
+  const auto catalog = transport.catalog(0, dgds::core::k_default_page_size);
 
-  ASSERT_FALSE(summaries.has_value());
-  EXPECT_EQ(summaries.error(), CoreError::protocol_version_unsupported);
+  ASSERT_FALSE(catalog.has_value());
+  EXPECT_EQ(catalog.error(), CoreError::protocol_version_unsupported);
 }
 
 } // namespace

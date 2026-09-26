@@ -120,16 +120,15 @@ Json purchase_summary_json(const core::PurchaseSummary &value) {
               {"purchased_at", value.purchased_at}};
 }
 
-template <typename Record, typename Item>
-Json page_json(const core::PageRequest &request, const core::Page<Record> &page, Item item) {
+template <typename Record, typename Item> Json page_json(const core::Page<Record> &page, Item item) {
   Json items = Json::array();
 
   for (const auto &record : page.records) {
     items.push_back(item(record));
   }
 
-  return Json{{"offset", std::to_string(request.offset)},
-              {"limit", std::to_string(request.limit)},
+  return Json{{"offset", std::to_string(page.request.offset)},
+              {"limit", std::to_string(page.request.limit)},
               {"total", std::to_string(page.total)},
               {"items", std::move(items)}};
 }
@@ -356,21 +355,17 @@ std::string encode(const core::Credentials &credentials) {
   return Json{{"user_id", core::to_uuid(credentials.user_id)}, {"token", credentials.token}}.dump();
 }
 
-std::string encode(const core::PageRequest &request, const core::PublicationSummaryPage &page) {
-  return page_json(request, page, summary_json).dump();
-}
+std::string encode(const core::PublicationSummaryPage &page) { return page_json(page, summary_json).dump(); }
 
-std::string encode(const core::PageRequest &request, const core::AuthorPublicationSummaryPage &page) {
-  return page_json(request, page,
+std::string encode(const core::AuthorPublicationSummaryPage &page) {
+  return page_json(page,
                    [](const core::AuthorPublicationSummary &summary) {
                      return Json{{"publication", summary_json(summary.publication)}, {"purchases", summary.purchases}};
                    })
       .dump();
 }
 
-std::string encode(const core::PageRequest &request, const core::PurchaseSummaryPage &page) {
-  return page_json(request, page, purchase_summary_json).dump();
-}
+std::string encode(const core::PurchaseSummaryPage &page) { return page_json(page, purchase_summary_json).dump(); }
 
 std::string encode(const core::Receipt &receipt) { return receipt_json(receipt).dump(); }
 
