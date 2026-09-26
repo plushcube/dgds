@@ -13,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <system_error>
+#include <utility>
 
 namespace dgds::server::api {
 namespace {
@@ -84,6 +85,14 @@ std::optional<std::uint64_t> read_number(const Json &body, core::Content field) 
   return value;
 }
 
+std::optional<std::uint64_t> read_page_field(const Json &body, core::Content field, std::uint64_t fallback) {
+  if (body.find(std::string(field)) == body.end()) {
+    return fallback;
+  }
+
+  return read_number(body, field);
+}
+
 Json sealed_json(const core::SealedContent &value) {
   return Json{{k_algorithm, static_cast<std::uint8_t>(value.algorithm)},
               {k_nonce, hex_of(value.nonce)},
@@ -109,6 +118,20 @@ Json purchase_summary_json(const core::PurchaseSummary &value) {
   return Json{{"purchase_id", std::to_string(value.purchase_id)},
               {"publication", summary_json(value.publication)},
               {"purchased_at", value.purchased_at}};
+}
+
+template <typename Record, typename Item>
+Json page_json(const core::PageRequest &request, const core::Page<Record> &page, Item item) {
+  Json items = Json::array();
+
+  for (const auto &record : page.records) {
+    items.push_back(item(record));
+  }
+
+  return Json{{"offset", std::to_string(request.offset)},
+              {"limit", std::to_string(request.limit)},
+              {"total", std::to_string(page.total)},
+              {"items", std::move(items)}};
 }
 
 Json receipt_json(const core::Receipt &value) {
@@ -307,6 +330,24 @@ std::optional<core::Signature> read_signature(core::Content body) {
   return bytes_of<core::k_signature_size>(text.value());
 }
 
+std::optional<core::PageRequest> read_page(core::Content body) {
+  const auto parsed = parse(body);
+
+  if (!parsed.has_value()) {
+    return std::nullopt;
+  }
+
+  const auto offset = read_page_field(parsed.value(), "offset", 0);
+  const auto limit = read_page_field(parsed.value(), "limit", core::k_default_page_size);
+
+  if (!offset.has_value() || !limit.has_value() || limit.value() > core::k_max_page_size) {
+    return std::nullopt;
+  }
+
+  return core::PageRequest{.offset = static_cast<std::size_t>(offset.value()),
+                           .limit = static_cast<std::size_t>(limit.value())};
+}
+
 std::string encode(const core::UserAccount &account) {
   return Json{{"user_id", core::to_uuid(account.user_id)}, {"name", account.name}}.dump();
 }
@@ -315,34 +356,20 @@ std::string encode(const core::Credentials &credentials) {
   return Json{{"user_id", core::to_uuid(credentials.user_id)}, {"token", credentials.token}}.dump();
 }
 
-std::string encode(const core::PublicationSummaries &summaries) {
-  Json list = Json::array();
-
-  for (const auto &summary : summaries) {
-    list.push_back(summary_json(summary));
-  }
-
-  return list.dump();
+std::string encode(const core::PageRequest &request, const core::PublicationSummaryPage &page) {
+  return page_json(request, page, summary_json).dump();
 }
 
-std::string encode(const core::AuthorPublicationSummaries &summaries) {
-  Json list = Json::array();
-
-  for (const auto &summary : summaries) {
-    list.push_back(Json{{"publication", summary_json(summary.publication)}, {"purchases", summary.purchases}});
-  }
-
-  return list.dump();
+std::string encode(const core::PageRequest &request, const core::AuthorPublicationSummaryPage &page) {
+  return page_json(request, page,
+                   [](const core::AuthorPublicationSummary &summary) {
+                     return Json{{"publication", summary_json(summary.publication)}, {"purchases", summary.purchases}};
+                   })
+      .dump();
 }
 
-std::string encode(const core::PurchaseSummaries &summaries) {
-  Json list = Json::array();
-
-  for (const auto &summary : summaries) {
-    list.push_back(purchase_summary_json(summary));
-  }
-
-  return list.dump();
+std::string encode(const core::PageRequest &request, const core::PurchaseSummaryPage &page) {
+  return page_json(request, page, purchase_summary_json).dump();
 }
 
 std::string encode(const core::Receipt &receipt) { return receipt_json(receipt).dump(); }

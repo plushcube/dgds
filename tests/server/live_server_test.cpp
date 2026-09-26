@@ -1,5 +1,7 @@
 #include "server_process.h"
 
+#include <dgds/core/models/protocol.h>
+
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
@@ -41,8 +43,30 @@ TEST_F(LiveServerTest, AnswersOverTlsWithVerifiedCertificate) {
 
   const Json body = Json::parse(response->body);
   EXPECT_EQ(body.at("version").get<std::uint8_t>(), 1);
-  EXPECT_TRUE(body.at("data").is_array());
-  EXPECT_TRUE(body.at("data").empty());
+  EXPECT_EQ(body.at("data").at("offset").get<std::string>(), "0");
+  EXPECT_EQ(body.at("data").at("limit").get<std::string>(), std::to_string(dgds::core::k_default_page_size));
+  EXPECT_EQ(body.at("data").at("total").get<std::string>(), "0");
+  EXPECT_TRUE(body.at("data").at("items").is_array());
+  EXPECT_TRUE(body.at("data").at("items").empty());
+}
+
+TEST_F(LiveServerTest, AnswersWithRequestedWindowOverTls) {
+  const auto response = post("/catalog", R"({"version":1,"offset":"3","limit":"7"})");
+
+  ASSERT_TRUE(response) << "соединение не установлено: " << httplib::to_string(response.error());
+  EXPECT_EQ(response->status, 200);
+
+  const Json body = Json::parse(response->body);
+  EXPECT_EQ(body.at("data").at("offset").get<std::string>(), "3");
+  EXPECT_EQ(body.at("data").at("limit").get<std::string>(), "7");
+  EXPECT_TRUE(body.at("data").at("items").is_array());
+  EXPECT_TRUE(body.at("data").at("items").empty());
+
+  const auto rejected = post("/catalog", R"({"version":1,"limit":"101"})");
+
+  ASSERT_TRUE(rejected);
+  EXPECT_EQ(rejected->status, 400);
+  EXPECT_EQ(Json::parse(rejected->body).at("error").at("code").get<std::string>(), "request_malformed");
 }
 
 TEST_F(LiveServerTest, KeepsPrivateKeyReadableOnlyByOwner) {

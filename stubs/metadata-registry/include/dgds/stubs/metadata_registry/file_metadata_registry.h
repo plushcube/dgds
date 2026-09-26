@@ -21,14 +21,16 @@ public:
   [[nodiscard]] core::Result<void> add_publication(const core::PublicationRecord &publication) override;
   [[nodiscard]] core::Result<core::PublicationRecord>
   find_publication(const core::PublicationId &publication_id) override;
-  [[nodiscard]] core::Result<core::PublicationRecords> publications() override;
-  [[nodiscard]] core::Result<core::PublicationRecords> publications_of_author(const core::UserId &author_id) override;
+  [[nodiscard]] core::Result<core::PublicationPage> publications(std::size_t offset, std::size_t limit) override;
+  [[nodiscard]] core::Result<core::PublicationPage>
+  publications_of_author(const core::UserId &author_id, std::size_t offset, std::size_t limit) override;
 
   [[nodiscard]] core::Result<void> add_purchase(const core::PurchaseRecord &purchase) override;
   [[nodiscard]] core::Result<core::PurchaseRecord> find_purchase(const core::PurchaseId &purchase_id) override;
   [[nodiscard]] core::Result<core::PurchaseRecord> find_purchase_of(const core::UserId &user_id,
                                                                     const core::PublicationId &publication_id) override;
-  [[nodiscard]] core::Result<core::PurchaseRecords> purchases_of_user(const core::UserId &user_id) override;
+  [[nodiscard]] core::Result<core::PurchasePage> purchases_of_user(const core::UserId &user_id, std::size_t offset,
+                                                                   std::size_t limit) override;
   [[nodiscard]] core::Result<std::size_t> purchase_count(const core::PublicationId &publication_id) override;
 
   [[nodiscard]] core::Result<void> save_receipt(const core::ReceiptRecord &record) override;

@@ -48,7 +48,7 @@ public:
 
   [[nodiscard]] Result<Credentials> log_in(Content name) override { return m_users.log_in(name); }
 
-  [[nodiscard]] Result<PublicationSummaries> catalog(std::size_t, std::size_t) override { return m_catalog.catalog(); }
+  [[nodiscard]] Result<PublicationSummaries> catalog(std::size_t offset, std::size_t limit) override;
 
   [[nodiscard]] Result<PublicationId> publish(const Credentials &credentials, const PublicationDraft &draft,
                                               const AuthorPublicKey &author_key, const Signature &signature) override;

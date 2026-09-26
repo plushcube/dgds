@@ -47,21 +47,25 @@ facade --> host: Credentials
 note over facade: Токен сессии — единственное,\nчто библиотека хранит о пользователе
 
 user -> host: открыть каталог
-host -> facade: catalog()
-facade -> transport: catalog()
-transport -> surface: HTTPS: каталог (без учётных данных)
-surface -> middleware: проверки запроса
-middleware -> services: catalog()
-services -> adapters: список публикаций
-adapters -> metadata: чтение publications/
-metadata --> adapters: PublicationRecord[]
-adapters --> services: PublicationSummary[]\n(идентификатор, название, имя файла,\nразмер, дата, имя автора)
-services --> middleware: PublicationSummaries
+host -> facade: catalog(смещение, размер окна)
+facade -> transport: catalog(смещение, размер окна)
+transport -> surface: HTTPS: каталог (смещение, размер окна, версия)
+surface -> middleware: проверки запроса (окно — строки, предел размера)
+middleware -> services: catalog(смещение, размер окна)
+services -> adapters: выборка окна
+adapters -> metadata: имена publications/\n(идентификаторы из имён)
+metadata --> adapters: идентификаторы по возрастанию
+adapters -> metadata: чтение и разбор только записей окна
+metadata --> adapters: PublicationRecord[] окна
+adapters --> services: окно записей и общее число публикаций
+services --> middleware: PublicationSummaryPage\n(идентификатор, название, имя файла,\nразмер, дата, имя автора)
 middleware --> surface: ответ
-surface --> transport: HTTPS: список публикаций
+surface --> transport: HTTPS: окно списка\n(смещение, размер, общее число, записи)
 transport --> facade: PublicationSummaries
 facade --> host: PublicationSummaries
-host --> user: список публикаций
+host --> user: первое окно каталога
+
+note over adapters, metadata: Каталог читает только записи окна:\nимена дают идентификаторы, порядок по возрастанию,\nзаписи за окном не читаются вовсе
 
 note over surface, services: Каталог открыт без авторизации;\nостальные операции требуют действующих учётных данных
 

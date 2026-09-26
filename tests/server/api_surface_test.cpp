@@ -25,15 +25,18 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <set>
 #include <string>
 #include <string_view>
 #include <unistd.h>
+#include <vector>
 
 namespace {
 
@@ -188,6 +191,40 @@ protected:
     return response_of(m_surface.log_in(request_of(Json{{"name", parsed.at("name")}}))).at("data").dump();
   }
 
+  [[nodiscard]] std::string publish_text(const std::string &credentials, std::string_view name,
+                                         const std::string &text) {
+    const auto keys = generate_author_key();
+    const auto identity = content_identity(text);
+    EXPECT_TRUE(keys.has_value());
+    EXPECT_TRUE(identity.has_value());
+
+    const auto signature = sign_author(identity.value(), name, keys->private_key);
+    EXPECT_TRUE(signature.has_value());
+
+    const auto published = response_of(m_surface.publish(
+        request_of(Json{{"credentials", Json::parse(credentials)},
+                        {"draft", Json{{"title", std::string(k_title)}, {"file_name", "файл.txt"}, {"content", text}}},
+                        {"author_key", to_hex(keys->public_key.data(), keys->public_key.size())},
+                        {"signature", to_hex(signature->data(), signature->size())}})));
+    EXPECT_TRUE(published.contains("data")) << published.dump();
+
+    return published.contains("data") ? published.at("data").get<std::string>() : std::string{};
+  }
+
+  [[nodiscard]] std::string buy_publication(const std::string &credentials, const std::string &publication_id) {
+    const auto device = generate_device_key();
+    EXPECT_TRUE(device.has_value());
+
+    const auto receipt = response_of(
+        m_surface.buy(request_of(Json{{"credentials", Json::parse(credentials)},
+                                      {"publication_id", publication_id},
+                                      {"device_key", to_hex(device->public_key.data(), device->public_key.size())}})));
+    EXPECT_TRUE(receipt.contains("data")) << receipt.dump();
+
+    return receipt.contains("data") ? receipt.at("data").at("header").at("purchase_id").get<std::string>()
+                                    : std::string{};
+  }
+
   std::filesystem::path m_root;
   FileIdentityRegistry m_identities{m_root / "identities"};
   FileKeyStore m_keys{m_root / "master.key", m_root / "keys"};
@@ -276,10 +313,10 @@ TEST_F(SurfaceTest, RejectsContentLargerThanLimit) {
   EXPECT_FALSE(std::filesystem::exists(m_root / "master.key")) << "появился мастер-ключ";
   EXPECT_FALSE(std::filesystem::exists(m_root / "identities")) << "идентификатор контента оказался занят";
 
-  const auto publications = m_metadata.publications();
+  const auto publications = m_metadata.publications(0, dgds::core::k_default_page_size);
 
   ASSERT_TRUE(publications.has_value());
-  EXPECT_TRUE(publications->empty()) << "появилась запись публикации";
+  EXPECT_TRUE(publications->records.empty()) << "появилась запись публикации";
 }
 
 TEST_F(SurfaceTest, RunsScenarioAcrossEveryOperation) {
@@ -316,19 +353,25 @@ TEST_F(SurfaceTest, RunsScenarioAcrossEveryOperation) {
   const auto catalog = response_of(m_surface.catalog(request_of(Json::object())));
 
   ASSERT_TRUE(catalog.contains("data")) << catalog.dump();
-  ASSERT_EQ(catalog.at("data").size(), 1U);
-  EXPECT_EQ(catalog.at("data").at(0).at("publication_id").get<std::string>(), publication_id);
-  EXPECT_EQ(catalog.at("data").at(0).at("title").get<std::string>(), k_title);
-  EXPECT_EQ(catalog.at("data").at(0).at("author_name").get<std::string>(), "автор");
-  EXPECT_EQ(catalog.at("data").at(0).at("size").get<std::size_t>(), canonical_form(text).size());
-  EXPECT_FALSE(catalog.at("data").at(0).contains("identity"));
+  EXPECT_EQ(catalog.at("data").at("offset").get<std::string>(), "0");
+  EXPECT_EQ(catalog.at("data").at("limit").get<std::string>(), std::to_string(dgds::core::k_default_page_size));
+  EXPECT_EQ(catalog.at("data").at("total").get<std::string>(), "1");
+  ASSERT_EQ(catalog.at("data").at("items").size(), 1U);
+  EXPECT_EQ(catalog.at("data").at("items").at(0).at("publication_id").get<std::string>(), publication_id);
+  EXPECT_EQ(catalog.at("data").at("items").at(0).at("title").get<std::string>(), k_title);
+  EXPECT_EQ(catalog.at("data").at("items").at(0).at("author_name").get<std::string>(), "автор");
+  EXPECT_EQ(catalog.at("data").at("items").at(0).at("size").get<std::size_t>(), canonical_form(text).size());
+  EXPECT_FALSE(catalog.at("data").at("items").at(0).contains("identity"));
 
   const auto mine =
       response_of(m_surface.author_publications(request_of(Json{{"credentials", Json::parse(author_credentials)}})));
 
   ASSERT_TRUE(mine.contains("data")) << mine.dump();
-  ASSERT_EQ(mine.at("data").size(), 1U);
-  EXPECT_EQ(mine.at("data").at(0).at("purchases").get<std::size_t>(), 0U);
+  EXPECT_EQ(mine.at("data").at("total").get<std::string>(), "1");
+  ASSERT_EQ(mine.at("data").at("items").size(), 1U);
+  EXPECT_EQ(mine.at("data").at("items").at(0).at("publication").at("publication_id").get<std::string>(),
+            publication_id);
+  EXPECT_EQ(mine.at("data").at("items").at(0).at("purchases").get<std::size_t>(), 0U);
 
   const auto device = generate_device_key();
   const auto other_device = generate_device_key();
@@ -349,9 +392,11 @@ TEST_F(SurfaceTest, RunsScenarioAcrossEveryOperation) {
       response_of(m_surface.purchases(request_of(Json{{"credentials", Json::parse(buyer_credentials)}})));
 
   ASSERT_TRUE(purchased.contains("data")) << purchased.dump();
-  ASSERT_EQ(purchased.at("data").size(), 1U);
-  EXPECT_EQ(purchased.at("data").at(0).at("publication").at("publication_id").get<std::string>(), publication_id);
-  EXPECT_EQ(purchased.at("data").at(0).at("publication").at("title").get<std::string>(), k_title);
+  EXPECT_EQ(purchased.at("data").at("total").get<std::string>(), "1");
+  ASSERT_EQ(purchased.at("data").at("items").size(), 1U);
+  EXPECT_EQ(purchased.at("data").at("items").at(0).at("publication").at("publication_id").get<std::string>(),
+            publication_id);
+  EXPECT_EQ(purchased.at("data").at("items").at(0).at("publication").at("title").get<std::string>(), k_title);
 
   m_now += 10;
 
@@ -594,6 +639,267 @@ TEST_F(SurfaceTest, RefusesExcessDeliveries) {
       {"credentials", Json::parse(author_credentials)}, {"purchase_id", publication_id}, {"device_key", other_key}})));
 
   ASSERT_TRUE(other_fetch.contains("data")) << other_fetch.dump();
+}
+
+void expect_windows_cover_list(const std::function<Json(const Json &)> &list, std::size_t limit) {
+  const Json whole = list(Json::object());
+
+  ASSERT_TRUE(whole.contains("data")) << whole.dump();
+
+  const Json &all_items = whole.at("data").at("items");
+  ASSERT_FALSE(all_items.empty()) << whole.dump();
+
+  std::vector<std::string> expected;
+
+  for (const Json &entry : all_items) {
+    expected.push_back(entry.dump());
+  }
+
+  std::vector<std::string> walked;
+
+  for (std::size_t offset = 0; offset <= all_items.size(); offset += limit) {
+    const Json page = list(Json{{"offset", std::to_string(offset)}, {"limit", std::to_string(limit)}});
+
+    ASSERT_TRUE(page.contains("data")) << page.dump();
+    EXPECT_EQ(page.at("data").at("offset").get<std::string>(), std::to_string(offset));
+    EXPECT_EQ(page.at("data").at("limit").get<std::string>(), std::to_string(limit));
+    EXPECT_EQ(page.at("data").at("total").get<std::string>(), std::to_string(all_items.size()));
+    EXPECT_LE(page.at("data").at("items").size(), limit);
+
+    for (const Json &entry : page.at("data").at("items")) {
+      walked.push_back(entry.dump());
+    }
+  }
+
+  ASSERT_EQ(walked.size(), expected.size()) << "обход окнами не покрыл список";
+
+  for (std::size_t index = 0; index < expected.size(); ++index) {
+    EXPECT_EQ(walked[index], expected[index]) << "окна не состыковались на записи " << index;
+  }
+}
+
+TEST_F(SurfaceTest, AppliesDefaultWindowWhenFieldsAbsent) {
+  const std::string author_credentials = credentials_of(account_of("автор"));
+  const std::string buyer_credentials = credentials_of(account_of("покупатель"));
+
+  const std::string first = publish_text(author_credentials, "автор", long_text() + "первая строка\n");
+  EXPECT_FALSE(publish_text(author_credentials, "автор", long_text() + "вторая строка\n").empty());
+  EXPECT_FALSE(buy_publication(buyer_credentials, first).empty());
+
+  const std::string default_limit = std::to_string(dgds::core::k_default_page_size);
+
+  const auto catalog = response_of(m_surface.catalog(request_of(Json::object())));
+
+  ASSERT_TRUE(catalog.contains("data")) << catalog.dump();
+  EXPECT_EQ(catalog.at("data").at("offset").get<std::string>(), "0");
+  EXPECT_EQ(catalog.at("data").at("limit").get<std::string>(), default_limit);
+  EXPECT_EQ(catalog.at("data").at("total").get<std::string>(), "2");
+  EXPECT_EQ(catalog.at("data").at("items").size(), 2U);
+
+  const auto only_limit = response_of(m_surface.catalog(request_of(Json{{"limit", "1"}})));
+
+  ASSERT_TRUE(only_limit.contains("data")) << only_limit.dump();
+  EXPECT_EQ(only_limit.at("data").at("offset").get<std::string>(), "0");
+  EXPECT_EQ(only_limit.at("data").at("limit").get<std::string>(), "1");
+  EXPECT_EQ(only_limit.at("data").at("total").get<std::string>(), "2");
+  ASSERT_EQ(only_limit.at("data").at("items").size(), 1U);
+
+  const auto only_offset = response_of(m_surface.catalog(request_of(Json{{"offset", "1"}})));
+
+  ASSERT_TRUE(only_offset.contains("data")) << only_offset.dump();
+  EXPECT_EQ(only_offset.at("data").at("offset").get<std::string>(), "1");
+  EXPECT_EQ(only_offset.at("data").at("limit").get<std::string>(), default_limit);
+  EXPECT_EQ(only_offset.at("data").at("total").get<std::string>(), "2");
+  ASSERT_EQ(only_offset.at("data").at("items").size(), 1U);
+
+  const auto mine =
+      response_of(m_surface.author_publications(request_of(Json{{"credentials", Json::parse(author_credentials)}})));
+
+  ASSERT_TRUE(mine.contains("data")) << mine.dump();
+  EXPECT_EQ(mine.at("data").at("offset").get<std::string>(), "0");
+  EXPECT_EQ(mine.at("data").at("limit").get<std::string>(), default_limit);
+  EXPECT_EQ(mine.at("data").at("total").get<std::string>(), "2");
+  EXPECT_EQ(mine.at("data").at("items").size(), 2U);
+
+  const auto purchased =
+      response_of(m_surface.purchases(request_of(Json{{"credentials", Json::parse(buyer_credentials)}})));
+
+  ASSERT_TRUE(purchased.contains("data")) << purchased.dump();
+  EXPECT_EQ(purchased.at("data").at("offset").get<std::string>(), "0");
+  EXPECT_EQ(purchased.at("data").at("limit").get<std::string>(), default_limit);
+  EXPECT_EQ(purchased.at("data").at("total").get<std::string>(), "1");
+  EXPECT_EQ(purchased.at("data").at("items").size(), 1U);
+}
+
+TEST_F(SurfaceTest, ReturnsRequestedWindowForEveryList) {
+  const std::string author_credentials = credentials_of(account_of("автор"));
+  const std::string buyer_credentials = credentials_of(account_of("покупатель"));
+
+  std::vector<std::string> purchases;
+
+  for (std::size_t index = 0; index < 3; ++index) {
+    const std::string publication_id =
+        publish_text(author_credentials, "автор", long_text() + std::to_string(index) + " строка\n");
+    purchases.push_back(buy_publication(buyer_credentials, publication_id));
+  }
+
+  const auto whole = response_of(m_surface.catalog(request_of(Json::object())));
+
+  ASSERT_TRUE(whole.contains("data")) << whole.dump();
+  ASSERT_EQ(whole.at("data").at("items").size(), 3U);
+
+  const auto repeated = response_of(m_surface.catalog(request_of(Json::object())));
+
+  ASSERT_TRUE(repeated.contains("data")) << repeated.dump();
+  EXPECT_EQ(whole.at("data").at("items").dump(), repeated.at("data").at("items").dump())
+      << "порядок каталога должен быть устойчивым";
+
+  std::uint64_t previous = 0;
+
+  for (const Json &entry : whole.at("data").at("items")) {
+    const std::uint64_t identifier = std::stoull(entry.at("publication_id").get<std::string>());
+    EXPECT_LT(previous, identifier) << "каталог должен быть упорядочен по идентификатору";
+    previous = identifier;
+  }
+
+  const auto window = response_of(m_surface.catalog(request_of(Json{{"offset", "1"}, {"limit", "1"}})));
+
+  ASSERT_TRUE(window.contains("data")) << window.dump();
+  EXPECT_EQ(window.at("data").at("offset").get<std::string>(), "1");
+  EXPECT_EQ(window.at("data").at("limit").get<std::string>(), "1");
+  EXPECT_EQ(window.at("data").at("total").get<std::string>(), "3");
+  ASSERT_EQ(window.at("data").at("items").size(), 1U);
+  EXPECT_EQ(window.at("data").at("items").at(0).dump(), whole.at("data").at("items").at(1).dump())
+      << "окно должно отдавать ту же запись, что и полный список";
+
+  const auto mine = response_of(m_surface.author_publications(
+      request_of(Json{{"credentials", Json::parse(author_credentials)}, {"offset", "2"}, {"limit", "1"}})));
+
+  ASSERT_TRUE(mine.contains("data")) << mine.dump();
+  EXPECT_EQ(mine.at("data").at("total").get<std::string>(), "3");
+  ASSERT_EQ(mine.at("data").at("items").size(), 1U);
+  EXPECT_EQ(mine.at("data").at("items").at(0).at("publication").dump(), whole.at("data").at("items").at(2).dump())
+      << "окно авторского списка должно отдавать ту же запись, что и каталог";
+
+  std::sort(purchases.begin(), purchases.end(),
+            [](const std::string &left, const std::string &right) { return std::stoull(left) < std::stoull(right); });
+
+  const auto purchased = response_of(m_surface.purchases(
+      request_of(Json{{"credentials", Json::parse(buyer_credentials)}, {"offset", "1"}, {"limit", "2"}})));
+
+  ASSERT_TRUE(purchased.contains("data")) << purchased.dump();
+  EXPECT_EQ(purchased.at("data").at("offset").get<std::string>(), "1");
+  EXPECT_EQ(purchased.at("data").at("limit").get<std::string>(), "2");
+  EXPECT_EQ(purchased.at("data").at("total").get<std::string>(), "3");
+  ASSERT_EQ(purchased.at("data").at("items").size(), 2U);
+  EXPECT_EQ(purchased.at("data").at("items").at(0).at("purchase_id").get<std::string>(), purchases[1]);
+  EXPECT_EQ(purchased.at("data").at("items").at(1).at("purchase_id").get<std::string>(), purchases[2]);
+}
+
+TEST_F(SurfaceTest, WalksEveryListInWindowsWithoutRepeats) {
+  const std::string author_credentials = credentials_of(account_of("автор"));
+  const std::string buyer_credentials = credentials_of(account_of("покупатель"));
+
+  for (std::size_t index = 0; index < 5; ++index) {
+    const std::string publication_id =
+        publish_text(author_credentials, "автор", long_text() + std::to_string(index) + " строка\n");
+    EXPECT_FALSE(buy_publication(buyer_credentials, publication_id).empty());
+  }
+
+  expect_windows_cover_list([this](const Json &window) { return response_of(m_surface.catalog(request_of(window))); },
+                            2);
+
+  expect_windows_cover_list(
+      [this, &author_credentials](const Json &window) {
+        Json body = window;
+        body["credentials"] = Json::parse(author_credentials);
+
+        return response_of(m_surface.author_publications(request_of(body)));
+      },
+      2);
+
+  expect_windows_cover_list(
+      [this, &buyer_credentials](const Json &window) {
+        Json body = window;
+        body["credentials"] = Json::parse(buyer_credentials);
+
+        return response_of(m_surface.purchases(request_of(body)));
+      },
+      2);
+}
+
+TEST_F(SurfaceTest, ReturnsEmptyWindowBeyondLastRecord) {
+  const std::string author_credentials = credentials_of(account_of("автор"));
+  const std::string buyer_credentials = credentials_of(account_of("покупатель"));
+
+  const std::string publication_id = publish_text(author_credentials, "автор", long_text());
+  EXPECT_FALSE(buy_publication(buyer_credentials, publication_id).empty());
+
+  const auto catalog = response_of(m_surface.catalog(request_of(Json{{"offset", "9"}, {"limit", "2"}})));
+
+  ASSERT_TRUE(catalog.contains("data")) << catalog.dump();
+  EXPECT_EQ(catalog.at("data").at("offset").get<std::string>(), "9");
+  EXPECT_EQ(catalog.at("data").at("total").get<std::string>(), "1");
+  EXPECT_TRUE(catalog.at("data").at("items").empty());
+
+  const auto mine = response_of(m_surface.author_publications(
+      request_of(Json{{"credentials", Json::parse(author_credentials)}, {"offset", "9"}, {"limit", "2"}})));
+
+  ASSERT_TRUE(mine.contains("data")) << mine.dump();
+  EXPECT_EQ(mine.at("data").at("total").get<std::string>(), "1");
+  EXPECT_TRUE(mine.at("data").at("items").empty());
+
+  const auto purchased = response_of(m_surface.purchases(
+      request_of(Json{{"credentials", Json::parse(buyer_credentials)}, {"offset", "9"}, {"limit", "2"}})));
+
+  ASSERT_TRUE(purchased.contains("data")) << purchased.dump();
+  EXPECT_EQ(purchased.at("data").at("total").get<std::string>(), "1");
+  EXPECT_TRUE(purchased.at("data").at("items").empty());
+
+  const auto empty_window = response_of(m_surface.catalog(request_of(Json{{"offset", "0"}, {"limit", "0"}})));
+
+  ASSERT_TRUE(empty_window.contains("data")) << empty_window.dump();
+  EXPECT_EQ(empty_window.at("data").at("limit").get<std::string>(), "0");
+  EXPECT_EQ(empty_window.at("data").at("total").get<std::string>(), "1");
+  EXPECT_TRUE(empty_window.at("data").at("items").empty());
+}
+
+TEST_F(SurfaceTest, RejectsWindowValuesOutsideAllowedRange) {
+  const std::string author_credentials = credentials_of(account_of("автор"));
+  const std::string buyer_credentials = credentials_of(account_of("покупатель"));
+
+  const std::vector<std::function<SurfaceResult(const Json &)>> lists{
+      [this](const Json &body) { return m_surface.catalog(request_of(body)); },
+      [this](const Json &body) { return m_surface.author_publications(request_of(body)); },
+      [this](const Json &body) { return m_surface.purchases(request_of(body)); }};
+
+  const std::vector<Json> basics{Json::object(), Json{{"credentials", Json::parse(author_credentials)}},
+                                 Json{{"credentials", Json::parse(buyer_credentials)}}};
+
+  const std::vector<Json> windows{Json{{"limit", std::to_string(dgds::core::k_max_page_size + 1)}},
+                                  Json{{"limit", "-1"}},
+                                  Json{{"limit", "нет"}},
+                                  Json{{"limit", 5}},
+                                  Json{{"offset", "-1"}},
+                                  Json{{"offset", "нет"}}};
+
+  for (std::size_t index = 0; index < lists.size(); ++index) {
+    Json body = basics[index];
+
+    for (const Json &window : windows) {
+      for (const auto &[field, value] : window.items()) {
+        body[field] = value;
+      }
+
+      const auto rejected = response_of(lists[index](body));
+
+      ASSERT_TRUE(rejected.contains("error")) << rejected.dump();
+      EXPECT_EQ(rejected.at("error").at("code").get<std::string>(), "request_malformed") << rejected.dump();
+
+      body.erase("offset");
+      body.erase("limit");
+    }
+  }
 }
 
 } // namespace

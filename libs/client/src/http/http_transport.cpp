@@ -461,7 +461,13 @@ Result<PublicationSummaries> HttpTransport::catalog(std::size_t offset, std::siz
     return std::unexpected(data.error());
   }
 
-  return summaries_of(data.value());
+  const auto items = field(data.value(), "items");
+
+  if (!items.has_value()) {
+    return std::unexpected(core::CoreError::protocol_failure);
+  }
+
+  return summaries_of(items.value());
 }
 
 Result<PublicationId> HttpTransport::publish(const Credentials &credentials, const PublicationDraft &draft,
@@ -510,13 +516,15 @@ Result<PurchaseSummaries> HttpTransport::purchases(const Credentials &credential
     return std::unexpected(data.error());
   }
 
-  if (!data->is_array()) {
+  const auto items = field(data.value(), "items");
+
+  if (!items.has_value() || !items->is_array()) {
     return std::unexpected(core::CoreError::protocol_failure);
   }
 
   std::vector<core::PurchaseSummary> summaries;
 
-  for (const Json &entry : data.value()) {
+  for (const Json &entry : items.value()) {
     const auto summary = purchase_summary_of(entry);
 
     if (!summary.has_value()) {

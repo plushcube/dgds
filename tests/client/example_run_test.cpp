@@ -1,6 +1,7 @@
 #include "server_process.h"
 
 #include <dgds/core/identity/canonical_form.h>
+#include <dgds/core/models/protocol.h>
 #include <dgds/server/models/attribution.h>
 #include <dgds/server/services/attribution_service.h>
 #include <dgds/stubs/metadata_registry/file_metadata_registry.h>
@@ -171,11 +172,11 @@ TEST_F(ExampleRunTest, PrintsPurchasedContentAndLeavesNoPlaintext) {
   ASSERT_TRUE(report.has_value());
   EXPECT_EQ(report->kind, AccessKind::purchase);
 
-  const auto publications = metadata.publications();
+  const auto publications = metadata.publications(0, dgds::core::k_default_page_size);
   ASSERT_TRUE(publications.has_value());
-  ASSERT_EQ(publications->size(), 1U);
-  EXPECT_EQ(report->publication_id, publications->front().publication_id);
-  EXPECT_NE(report->user_id, publications->front().author_id);
+  ASSERT_EQ(publications->records.size(), 1U);
+  EXPECT_EQ(report->publication_id, publications->records.front().publication_id);
+  EXPECT_NE(report->user_id, publications->records.front().author_id);
 }
 
 TEST_F(ExampleRunTest, RefusesUnknownOption) {

@@ -148,11 +148,11 @@ TEST_F(PublicationServiceTest, PublishesContentSealedForDelivery) {
   ASSERT_TRUE(identity.has_value());
   EXPECT_EQ(publication->identity, identity.value());
 
-  const auto catalog = m_metadata.publications();
+  const auto catalog = m_metadata.publications(0, dgds::core::k_default_page_size);
 
   ASSERT_TRUE(catalog.has_value());
-  ASSERT_EQ(catalog->size(), 1U);
-  EXPECT_EQ((*catalog)[0].publication_id, publication->publication_id);
+  ASSERT_EQ(catalog->records.size(), 1U);
+  EXPECT_EQ(catalog->records[0].publication_id, publication->publication_id);
 
   const auto stored = m_blobs.load(identity.value());
   ASSERT_TRUE(stored.has_value());
@@ -192,13 +192,13 @@ TEST_F(PublicationServiceTest, RejectsDuplicateWithoutRevealingMetadata) {
   ASSERT_FALSE(repeated.has_value());
   EXPECT_EQ(repeated.error(), CoreError::content_duplicate);
 
-  const auto catalog = m_metadata.publications();
+  const auto catalog = m_metadata.publications(0, dgds::core::k_default_page_size);
 
   ASSERT_TRUE(catalog.has_value());
-  ASSERT_EQ(catalog->size(), 1U);
-  EXPECT_EQ((*catalog)[0].author_id, first.user_id);
-  EXPECT_EQ((*catalog)[0].title, k_title);
-  EXPECT_EQ((*catalog)[0].file_name, k_file_name);
+  ASSERT_EQ(catalog->records.size(), 1U);
+  EXPECT_EQ(catalog->records[0].author_id, first.user_id);
+  EXPECT_EQ(catalog->records[0].title, k_title);
+  EXPECT_EQ(catalog->records[0].file_name, k_file_name);
 }
 
 TEST_F(PublicationServiceTest, RejectsForgedSignature) {
@@ -222,9 +222,9 @@ TEST_F(PublicationServiceTest, RejectsForgedSignature) {
   ASSERT_FALSE(rejected.has_value());
   EXPECT_EQ(rejected.error(), CoreError::signature_invalid);
 
-  const auto catalog = m_metadata.publications();
+  const auto catalog = m_metadata.publications(0, dgds::core::k_default_page_size);
   ASSERT_TRUE(catalog.has_value());
-  EXPECT_TRUE(catalog->empty());
+  EXPECT_TRUE(catalog->records.empty());
 
   const auto legitimate = sign_content(k_text, author.name, author_keys->private_key);
   ASSERT_TRUE(legitimate.has_value());

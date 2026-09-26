@@ -9,12 +9,8 @@
 #include <dgds/core/models/user.h>
 
 #include <cstddef>
-#include <vector>
 
 namespace dgds::core {
-
-using PublicationRecords = std::vector<PublicationRecord>;
-using PurchaseRecords = std::vector<PurchaseRecord>;
 
 class MetadataRegistry {
 public:
@@ -31,14 +27,16 @@ public:
 
   [[nodiscard]] virtual Result<void> add_publication(const PublicationRecord &publication) = 0;
   [[nodiscard]] virtual Result<PublicationRecord> find_publication(const PublicationId &publication_id) = 0;
-  [[nodiscard]] virtual Result<PublicationRecords> publications() = 0;
-  [[nodiscard]] virtual Result<PublicationRecords> publications_of_author(const UserId &author_id) = 0;
+  [[nodiscard]] virtual Result<PublicationPage> publications(std::size_t offset, std::size_t limit) = 0;
+  [[nodiscard]] virtual Result<PublicationPage> publications_of_author(const UserId &author_id, std::size_t offset,
+                                                                       std::size_t limit) = 0;
 
   [[nodiscard]] virtual Result<void> add_purchase(const PurchaseRecord &purchase) = 0;
   [[nodiscard]] virtual Result<PurchaseRecord> find_purchase(const PurchaseId &purchase_id) = 0;
   [[nodiscard]] virtual Result<PurchaseRecord> find_purchase_of(const UserId &user_id,
                                                                 const PublicationId &publication_id) = 0;
-  [[nodiscard]] virtual Result<PurchaseRecords> purchases_of_user(const UserId &user_id) = 0;
+  [[nodiscard]] virtual Result<PurchasePage> purchases_of_user(const UserId &user_id, std::size_t offset,
+                                                               std::size_t limit) = 0;
   [[nodiscard]] virtual Result<std::size_t> purchase_count(const PublicationId &publication_id) = 0;
 
   [[nodiscard]] virtual Result<void> save_receipt(const ReceiptRecord &record) = 0;

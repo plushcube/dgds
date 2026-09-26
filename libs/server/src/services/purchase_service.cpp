@@ -154,26 +154,27 @@ PurchaseService::issue_receipt(const core::PurchaseId &context_id, const core::U
   return receipt;
 }
 
-core::Result<core::PurchaseSummaries> PurchaseService::purchases_of(const core::UserId &user_id) {
-  const auto purchases = m_metadata.purchases_of_user(user_id);
+core::Result<core::PurchaseSummaryPage> PurchaseService::purchases_of(const core::UserId &user_id,
+                                                                      core::PageRequest request) {
+  const auto page = m_metadata.purchases_of_user(user_id, request.offset, request.limit);
 
-  if (!purchases.has_value()) {
-    return std::unexpected(purchases.error());
+  if (!page.has_value()) {
+    return std::unexpected(page.error());
   }
 
-  core::PurchaseSummaries summaries;
-  summaries.reserve(purchases->size());
+  core::PurchaseSummaryPage summaries{.total = page->total, .records = {}};
+  summaries.records.reserve(page->records.size());
 
-  for (const auto &purchase : purchases.value()) {
+  for (const auto &purchase : page->records) {
     const auto publication = m_metadata.find_publication(purchase.publication_id);
 
     if (!publication.has_value()) {
       return std::unexpected(publication.error());
     }
 
-    summaries.push_back(core::PurchaseSummary{.purchase_id = purchase.purchase_id,
-                                              .publication = summarise_publication(publication.value()),
-                                              .purchased_at = purchase.purchased_at});
+    summaries.records.push_back(core::PurchaseSummary{.purchase_id = purchase.purchase_id,
+                                                      .publication = summarise_publication(publication.value()),
+                                                      .purchased_at = purchase.purchased_at});
   }
 
   return summaries;

@@ -18,7 +18,8 @@ public:
   [[nodiscard]] core::Result<core::Receipt> buy(const core::UserId &user_id, const core::PublicationId &publication_id,
                                                 const core::DevicePublicKey &device_key, core::Timestamp purchased_at);
 
-  [[nodiscard]] core::Result<core::PurchaseSummaries> purchases_of(const core::UserId &user_id);
+  [[nodiscard]] core::Result<core::PurchaseSummaryPage> purchases_of(const core::UserId &user_id,
+                                                                     core::PageRequest request);
 
   [[nodiscard]] core::Result<core::Receipt> restore_receipt(const core::UserId &user_id,
                                                             const core::PurchaseId &context_id,

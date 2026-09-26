@@ -2,6 +2,7 @@
 
 #include <dgds/core/crypto/aead.h>
 #include <dgds/core/models/envelope.h>
+#include <dgds/core/models/protocol.h>
 #include <dgds/core/signature/author_signature.h>
 
 #include <gtest/gtest.h>
@@ -10,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <latch>
 #include <string>
 #include <string_view>
@@ -219,16 +221,147 @@ TEST_F(MetadataRegistryTest, ListsPublicationsOfAuthorOnly) {
   ASSERT_TRUE(make_registry().add_publication(make_publication(22, second.user_id, "вторая")).has_value());
   ASSERT_TRUE(make_registry().add_publication(make_publication(23, first.user_id, "третья")).has_value());
 
-  const auto catalog = make_registry().publications();
-  const auto own = make_registry().publications_of_author(first.user_id);
+  const auto catalog = make_registry().publications(0, dgds::core::k_default_page_size);
+  const auto own = make_registry().publications_of_author(first.user_id, 0, dgds::core::k_default_page_size);
 
   ASSERT_TRUE(catalog.has_value());
   ASSERT_TRUE(own.has_value());
-  EXPECT_EQ(catalog->size(), 3U);
+  EXPECT_EQ(catalog->total, 3U);
+  EXPECT_EQ(catalog->records.size(), 3U);
 
-  ASSERT_EQ(own->size(), 2U);
-  EXPECT_EQ((*own)[0].publication_id, 21U);
-  EXPECT_EQ((*own)[1].publication_id, 23U);
+  ASSERT_EQ(own->records.size(), 2U);
+  EXPECT_EQ(own->total, 2U);
+  EXPECT_EQ(own->records[0].publication_id, 21U);
+  EXPECT_EQ(own->records[1].publication_id, 23U);
+}
+
+TEST_F(MetadataRegistryTest, ReturnsRequestedPublicationWindow) {
+  const UserAccount account = make_user(21, "автор");
+
+  ASSERT_TRUE(make_registry().add_user(account).has_value());
+
+  for (const std::uint64_t identifier : {9U, 2U, 10U, 4U, 7U}) {
+    ASSERT_TRUE(make_registry().add_publication(make_publication(identifier, account.user_id, "запись")).has_value());
+  }
+
+  const auto page = make_registry().publications(1, 2);
+
+  ASSERT_TRUE(page.has_value());
+  EXPECT_EQ(page->total, 5U);
+
+  ASSERT_EQ(page->records.size(), 2U);
+  EXPECT_EQ(page->records[0].publication_id, 4U);
+  EXPECT_EQ(page->records[1].publication_id, 7U);
+}
+
+TEST_F(MetadataRegistryTest, OrdersPublicationWindowByNumericIdentifier) {
+  const UserAccount account = make_user(22, "автор");
+
+  ASSERT_TRUE(make_registry().add_user(account).has_value());
+
+  for (const std::uint64_t identifier : {2U, 9U, 10U}) {
+    ASSERT_TRUE(make_registry().add_publication(make_publication(identifier, account.user_id, "запись")).has_value());
+  }
+
+  const auto page = make_registry().publications(0, 3);
+
+  ASSERT_TRUE(page.has_value());
+
+  ASSERT_EQ(page->records.size(), 3U);
+  EXPECT_EQ(page->records[0].publication_id, 2U);
+  EXPECT_EQ(page->records[1].publication_id, 9U);
+  EXPECT_EQ(page->records[2].publication_id, 10U);
+}
+
+TEST_F(MetadataRegistryTest, WalksPublicationCatalogInWindowsWithoutRepeats) {
+  const UserAccount account = make_user(23, "автор");
+
+  ASSERT_TRUE(make_registry().add_user(account).has_value());
+
+  for (const std::uint64_t identifier : {2U, 5U, 9U, 10U, 11U}) {
+    ASSERT_TRUE(make_registry().add_publication(make_publication(identifier, account.user_id, "запись")).has_value());
+  }
+
+  std::vector<std::uint64_t> walked;
+
+  for (std::size_t offset = 0;; offset += 2) {
+    const auto page = make_registry().publications(offset, 2);
+
+    ASSERT_TRUE(page.has_value());
+    EXPECT_EQ(page->total, 5U);
+
+    if (page->records.empty()) {
+      break;
+    }
+
+    for (const auto &record : page->records) {
+      walked.push_back(record.publication_id);
+    }
+  }
+
+  EXPECT_EQ(walked, (std::vector<std::uint64_t>{2U, 5U, 9U, 10U, 11U}));
+}
+
+TEST_F(MetadataRegistryTest, ReturnsEmptyPublicationWindowBeyondLastRecord) {
+  const UserAccount account = make_user(24, "автор");
+
+  ASSERT_TRUE(make_registry().add_user(account).has_value());
+  ASSERT_TRUE(make_registry().add_publication(make_publication(31, account.user_id, "запись")).has_value());
+  ASSERT_TRUE(make_registry().add_publication(make_publication(32, account.user_id, "запись")).has_value());
+
+  const auto page = make_registry().publications(5, 2);
+
+  ASSERT_TRUE(page.has_value());
+  EXPECT_EQ(page->total, 2U);
+  EXPECT_TRUE(page->records.empty());
+}
+
+TEST_F(MetadataRegistryTest, ReadsOnlyRequestedPublicationWindow) {
+  const UserAccount account = make_user(25, "автор");
+
+  ASSERT_TRUE(make_registry().add_user(account).has_value());
+  ASSERT_TRUE(make_registry().add_publication(make_publication(2, account.user_id, "вторая")).has_value());
+  ASSERT_TRUE(make_registry().add_publication(make_publication(10, account.user_id, "десятая")).has_value());
+
+  const std::filesystem::path broken = m_root / "publications" / "99.publication";
+  std::ofstream(broken, std::ios::binary) << "испорченная запись";
+
+  const auto page = make_registry().publications(0, 2);
+
+  ASSERT_TRUE(page.has_value()) << "испорченная запись за окном сломала выборку";
+  EXPECT_EQ(page->total, 3U);
+
+  ASSERT_EQ(page->records.size(), 2U);
+  EXPECT_EQ(page->records[0].publication_id, 2U);
+  EXPECT_EQ(page->records[1].publication_id, 10U);
+
+  const auto reaching = make_registry().publications(2, 2);
+
+  ASSERT_FALSE(reaching.has_value());
+  EXPECT_EQ(reaching.error(), CoreError::storage_failed);
+}
+
+TEST_F(MetadataRegistryTest, ReturnsAuthorPublicationWindow) {
+  const UserAccount account = make_user(26, "автор");
+  const UserAccount other = make_user(27, "другой");
+
+  ASSERT_TRUE(make_registry().add_user(account).has_value());
+  ASSERT_TRUE(make_registry().add_user(other).has_value());
+
+  for (const std::uint64_t identifier : {6U, 3U, 12U, 8U}) {
+    ASSERT_TRUE(make_registry().add_publication(make_publication(identifier, account.user_id, "запись")).has_value());
+  }
+
+  ASSERT_TRUE(make_registry().add_publication(make_publication(20, other.user_id, "чужая")).has_value());
+
+  const auto page = make_registry().publications_of_author(account.user_id, 1, 2);
+
+  ASSERT_TRUE(page.has_value());
+  EXPECT_EQ(page->total, 4U);
+
+  ASSERT_EQ(page->records.size(), 2U);
+  EXPECT_EQ(page->records[0].publication_id, 6U);
+  EXPECT_EQ(page->records[1].publication_id, 8U);
 }
 
 TEST_F(MetadataRegistryTest, ReportsUnknownPublication) {
@@ -267,11 +400,11 @@ TEST_F(MetadataRegistryTest, RejectsSecondPurchaseOfSamePair) {
   ASSERT_FALSE(second.has_value());
   EXPECT_EQ(second.error(), CoreError::record_exists);
 
-  const auto purchases = make_registry().purchases_of_user(account.user_id);
+  const auto purchases = make_registry().purchases_of_user(account.user_id, 0, dgds::core::k_default_page_size);
 
   ASSERT_TRUE(purchases.has_value());
-  ASSERT_EQ(purchases->size(), 1U);
-  EXPECT_EQ(purchases->front().purchase_id, 51U);
+  ASSERT_EQ(purchases->records.size(), 1U);
+  EXPECT_EQ(purchases->records.front().purchase_id, 51U);
 }
 
 TEST_F(MetadataRegistryTest, KeepsPurchasesOfDifferentPublications) {
@@ -281,10 +414,11 @@ TEST_F(MetadataRegistryTest, KeepsPurchasesOfDifferentPublications) {
   ASSERT_TRUE(make_registry().add_purchase(make_purchase(71, account.user_id, 81)).has_value());
   ASSERT_TRUE(make_registry().add_purchase(make_purchase(72, account.user_id, 82)).has_value());
 
-  const auto purchases = make_registry().purchases_of_user(account.user_id);
+  const auto purchases = make_registry().purchases_of_user(account.user_id, 0, dgds::core::k_default_page_size);
 
   ASSERT_TRUE(purchases.has_value());
-  EXPECT_EQ(purchases->size(), 2U);
+  EXPECT_EQ(purchases->records.size(), 2U);
+  EXPECT_EQ(purchases->total, 2U);
 }
 
 TEST_F(MetadataRegistryTest, KeepsPurchasesOfPublicationByDifferentUsers) {
@@ -296,11 +430,11 @@ TEST_F(MetadataRegistryTest, KeepsPurchasesOfPublicationByDifferentUsers) {
   ASSERT_TRUE(make_registry().add_purchase(make_purchase(91, first.user_id, 93)).has_value());
   ASSERT_TRUE(make_registry().add_purchase(make_purchase(92, second.user_id, 93)).has_value());
 
-  const auto purchases = make_registry().purchases_of_user(second.user_id);
+  const auto purchases = make_registry().purchases_of_user(second.user_id, 0, dgds::core::k_default_page_size);
 
   ASSERT_TRUE(purchases.has_value());
-  ASSERT_EQ(purchases->size(), 1U);
-  EXPECT_EQ(purchases->front().purchase_id, 92U);
+  ASSERT_EQ(purchases->records.size(), 1U);
+  EXPECT_EQ(purchases->records.front().purchase_id, 92U);
 }
 
 TEST_F(MetadataRegistryTest, ListsPurchasesOfUserOnly) {
@@ -312,11 +446,76 @@ TEST_F(MetadataRegistryTest, ListsPurchasesOfUserOnly) {
   ASSERT_TRUE(make_registry().add_purchase(make_purchase(51, first.user_id, 61)).has_value());
   ASSERT_TRUE(make_registry().add_purchase(make_purchase(52, second.user_id, 61)).has_value());
 
-  const auto own = make_registry().purchases_of_user(first.user_id);
+  const auto own = make_registry().purchases_of_user(first.user_id, 0, dgds::core::k_default_page_size);
 
   ASSERT_TRUE(own.has_value());
-  ASSERT_EQ(own->size(), 1U);
-  EXPECT_EQ((*own)[0].purchase_id, 51U);
+  ASSERT_EQ(own->records.size(), 1U);
+  EXPECT_EQ(own->records[0].purchase_id, 51U);
+}
+
+TEST_F(MetadataRegistryTest, ReturnsRequestedPurchaseWindow) {
+  const UserAccount account = make_user(28, "покупатель");
+
+  ASSERT_TRUE(make_registry().add_user(account).has_value());
+
+  for (const std::uint64_t identifier : {9U, 2U, 10U, 4U, 7U}) {
+    ASSERT_TRUE(make_registry().add_purchase(make_purchase(identifier, account.user_id, identifier)).has_value());
+  }
+
+  const auto page = make_registry().purchases_of_user(account.user_id, 1, 2);
+
+  ASSERT_TRUE(page.has_value());
+  EXPECT_EQ(page->total, 5U);
+
+  ASSERT_EQ(page->records.size(), 2U);
+  EXPECT_EQ(page->records[0].purchase_id, 4U);
+  EXPECT_EQ(page->records[1].purchase_id, 7U);
+}
+
+TEST_F(MetadataRegistryTest, WalksUserPurchasesInWindowsWithoutRepeats) {
+  const UserAccount account = make_user(29, "покупатель");
+  const UserAccount other = make_user(30, "другой");
+
+  ASSERT_TRUE(make_registry().add_user(account).has_value());
+  ASSERT_TRUE(make_registry().add_user(other).has_value());
+
+  for (const std::uint64_t identifier : {2U, 9U, 10U}) {
+    ASSERT_TRUE(make_registry().add_purchase(make_purchase(identifier, account.user_id, identifier)).has_value());
+  }
+
+  ASSERT_TRUE(make_registry().add_purchase(make_purchase(40, other.user_id, 40)).has_value());
+
+  std::vector<std::uint64_t> walked;
+
+  for (std::size_t offset = 0;; offset += 2) {
+    const auto page = make_registry().purchases_of_user(account.user_id, offset, 2);
+
+    ASSERT_TRUE(page.has_value());
+    EXPECT_EQ(page->total, 3U);
+
+    if (page->records.empty()) {
+      break;
+    }
+
+    for (const auto &record : page->records) {
+      walked.push_back(record.purchase_id);
+    }
+  }
+
+  EXPECT_EQ(walked, (std::vector<std::uint64_t>{2U, 9U, 10U}));
+}
+
+TEST_F(MetadataRegistryTest, ReturnsEmptyPurchaseWindowBeyondLastRecord) {
+  const UserAccount account = make_user(31, "покупатель");
+
+  ASSERT_TRUE(make_registry().add_user(account).has_value());
+  ASSERT_TRUE(make_registry().add_purchase(make_purchase(51, account.user_id, 61)).has_value());
+
+  const auto page = make_registry().purchases_of_user(account.user_id, 3, 2);
+
+  ASSERT_TRUE(page.has_value());
+  EXPECT_EQ(page->total, 1U);
+  EXPECT_TRUE(page->records.empty());
 }
 
 TEST_F(MetadataRegistryTest, CountsPurchasesOfPublication) {

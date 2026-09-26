@@ -212,8 +212,12 @@ TEST_F(HttpBindingTest, ServesScenarioOverHttp) {
 
   ASSERT_TRUE(catalog);
   ASSERT_EQ(catalog->status, 200);
-  ASSERT_EQ(Json::parse(catalog->body).at("data").size(), 1U);
-  EXPECT_EQ(Json::parse(catalog->body).at("data").at(0).at("publication_id").get<std::string>(), publication_id);
+  const Json catalog_body = Json::parse(catalog->body).at("data");
+  ASSERT_EQ(catalog_body.at("offset").get<std::string>(), "0");
+  ASSERT_EQ(catalog_body.at("limit").get<std::string>(), std::to_string(dgds::core::k_default_page_size));
+  ASSERT_EQ(catalog_body.at("total").get<std::string>(), "1");
+  ASSERT_EQ(catalog_body.at("items").size(), 1U);
+  EXPECT_EQ(catalog_body.at("items").at(0).at("publication_id").get<std::string>(), publication_id);
 
   const auto duplicate = post("/publish", publication);
   ASSERT_TRUE(duplicate);

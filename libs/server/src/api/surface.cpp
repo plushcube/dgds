@@ -90,13 +90,19 @@ SurfaceResult Surface::catalog(core::Content body) {
     return failure(failure_code.value());
   }
 
-  const auto summaries = m_catalog.catalog();
+  const auto request = read_page(body);
+
+  if (!request.has_value()) {
+    return failure(k_malformed);
+  }
+
+  const auto summaries = m_catalog.catalog(request.value());
 
   if (!summaries.has_value()) {
     return failure(summaries.error());
   }
 
-  return ok(encode(summaries.value()));
+  return ok(encode(request.value(), summaries.value()));
 }
 
 SurfaceResult Surface::publish(core::Content body) {
@@ -138,9 +144,10 @@ SurfaceResult Surface::author_publications(core::Content body) {
     return failure(failure_code.value());
   }
 
+  const auto request = read_page(body);
   const auto credentials = read_credentials(body);
 
-  if (!credentials.has_value()) {
+  if (!request.has_value() || !credentials.has_value()) {
     return failure(k_malformed);
   }
 
@@ -150,13 +157,13 @@ SurfaceResult Surface::author_publications(core::Content body) {
     return failure(author_id.error());
   }
 
-  const auto summaries = m_catalog.author_publications(author_id.value());
+  const auto summaries = m_catalog.author_publications(author_id.value(), request.value());
 
   if (!summaries.has_value()) {
     return failure(summaries.error());
   }
 
-  return ok(encode(summaries.value()));
+  return ok(encode(request.value(), summaries.value()));
 }
 
 SurfaceResult Surface::buy(core::Content body) {
@@ -192,9 +199,10 @@ SurfaceResult Surface::purchases(core::Content body) {
     return failure(failure_code.value());
   }
 
+  const auto request = read_page(body);
   const auto credentials = read_credentials(body);
 
-  if (!credentials.has_value()) {
+  if (!request.has_value() || !credentials.has_value()) {
     return failure(k_malformed);
   }
 
@@ -204,13 +212,13 @@ SurfaceResult Surface::purchases(core::Content body) {
     return failure(user_id.error());
   }
 
-  const auto summaries = m_purchases.purchases_of(user_id.value());
+  const auto summaries = m_purchases.purchases_of(user_id.value(), request.value());
 
   if (!summaries.has_value()) {
     return failure(summaries.error());
   }
 
-  return ok(encode(summaries.value()));
+  return ok(encode(request.value(), summaries.value()));
 }
 
 SurfaceResult Surface::restore_receipt(core::Content body) {

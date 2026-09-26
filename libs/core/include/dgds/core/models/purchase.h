@@ -27,4 +27,7 @@ struct PurchaseSummary {
 
 using PurchaseSummaries = std::vector<PurchaseSummary>;
 
+using PurchasePage = Page<PurchaseRecord>;
+using PurchaseSummaryPage = Page<PurchaseSummary>;
+
 } // namespace dgds::core
