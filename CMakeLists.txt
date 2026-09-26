@@ -40,6 +40,7 @@ add_subdirectory(libs)
 add_subdirectory(stubs)
 add_subdirectory(src)
 add_subdirectory(example)
+add_subdirectory(tools)
 
 install(TARGETS ${TASK_CLI} RUNTIME DESTINATION bin)
 
