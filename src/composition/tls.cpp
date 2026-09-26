@@ -1,6 +1,7 @@
 #include "tls.h"
 
 #include <openssl/bio.h>
+#include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
@@ -9,9 +10,15 @@
 #include <array>
 #include <cstddef>
 #include <expected>
+#include <fcntl.h>
 #include <filesystem>
+#include <functional>
+#include <memory>
 #include <string>
+#include <sys/file.h>
+#include <sys/stat.h>
 #include <system_error>
+#include <unistd.h>
 
 namespace dgds::app {
 namespace {
@@ -24,6 +31,15 @@ constexpr long k_valid_seconds = 10L * 365 * 24 * 60 * 60;
 constexpr int k_serial = 1;
 constexpr std::size_t k_fingerprint_size = 32;
 constexpr unsigned char k_low_nibble_mask = 0x0F;
+
+void release_encoded(unsigned char *bytes) { OPENSSL_free(bytes); }
+
+using EncodedBytes = std::unique_ptr<unsigned char, void (*)(unsigned char *)>;
+constexpr const char *k_pending_suffix = ".pending";
+constexpr const char *k_lock_name = "tls.lock";
+constexpr mode_t k_key_mode = 0600;
+constexpr mode_t k_certificate_mode = 0644;
+constexpr long k_backdate_seconds = 24 * 60 * 60;
 
 template <typename Type, void (*Release)(Type *)> class Handle {
 public:
@@ -74,7 +90,7 @@ CertificateHandle make_certificate(EVP_PKEY *key) {
 
   X509_set_version(certificate.get(), 2);
   ASN1_INTEGER_set(X509_get_serialNumber(certificate.get()), k_serial);
-  X509_gmtime_adj(X509_getm_notBefore(certificate.get()), 0);
+  X509_gmtime_adj(X509_getm_notBefore(certificate.get()), -k_backdate_seconds);
   X509_gmtime_adj(X509_getm_notAfter(certificate.get()), k_valid_seconds);
   X509_set_pubkey(certificate.get(), key);
 
@@ -109,35 +125,114 @@ CertificateHandle make_certificate(EVP_PKEY *key) {
   return certificate;
 }
 
-core::Result<void> write_files(const TlsFiles &files, X509 *certificate, EVP_PKEY *key) {
+core::Result<void> write_file(const std::filesystem::path &path, mode_t mode, const std::function<bool(BIO *)> &write) {
+  const std::filesystem::path pending = path.string() + k_pending_suffix;
+  const int descriptor = ::open(pending.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_NOFOLLOW, mode);
+
+  if (descriptor < 0) {
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
+  bool written = false;
+
+  {
+    const BioHandle bio{BIO_new_fd(descriptor, BIO_NOCLOSE)};
+
+    if (bio.get() != nullptr) {
+      written = write(bio.get()) && BIO_flush(bio.get()) == 1;
+    }
+  }
+
+  const bool synced = written && ::fsync(descriptor) == 0;
+  const bool closed = ::close(descriptor) == 0;
+
+  if (!synced || !closed) {
+    ::unlink(pending.c_str());
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
   std::error_code status;
-  std::filesystem::create_directories(files.certificate.parent_path(), status);
+  std::filesystem::rename(pending, path, status);
 
   if (status) {
-    return std::unexpected(core::CoreError::storage_failed);
-  }
-
-  const BioHandle certificate_bio{BIO_new_file(files.certificate.c_str(), "w")};
-
-  if (certificate_bio.get() == nullptr || PEM_write_bio_X509(certificate_bio.get(), certificate) != 1) {
-    return std::unexpected(core::CoreError::storage_failed);
-  }
-
-  const BioHandle key_bio{BIO_new_file(files.key.c_str(), "w")};
-
-  if (key_bio.get() == nullptr ||
-      PEM_write_bio_PrivateKey(key_bio.get(), key, nullptr, nullptr, 0, nullptr, nullptr) != 1) {
-    return std::unexpected(core::CoreError::storage_failed);
-  }
-
-  std::filesystem::permissions(files.key, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
-                               std::filesystem::perm_options::replace, status);
-
-  if (status) {
+    ::unlink(pending.c_str());
     return std::unexpected(core::CoreError::storage_failed);
   }
 
   return {};
+}
+
+core::Result<void> write_files(const TlsFiles &files, X509 *certificate, EVP_PKEY *key) {
+  const auto written_certificate = write_file(files.certificate, k_certificate_mode, [certificate](BIO *bio) {
+    return PEM_write_bio_X509(bio, certificate) == 1;
+  });
+
+  if (!written_certificate.has_value()) {
+    return std::unexpected(written_certificate.error());
+  }
+
+  return write_file(files.key, k_key_mode, [key](BIO *bio) {
+    return PEM_write_bio_PrivateKey(bio, key, nullptr, nullptr, 0, nullptr, nullptr) == 1;
+  });
+}
+
+class LockFile {
+public:
+  LockFile() = default;
+  explicit LockFile(int descriptor) : m_descriptor(descriptor) {}
+  LockFile(const LockFile &) = delete;
+  LockFile &operator=(const LockFile &) = delete;
+  LockFile(LockFile &&other) noexcept : m_descriptor(other.m_descriptor) { other.m_descriptor = -1; }
+  LockFile &operator=(LockFile &&other) noexcept {
+    if (this != &other) {
+      if (m_descriptor >= 0) {
+        ::flock(m_descriptor, LOCK_UN);
+        ::close(m_descriptor);
+      }
+
+      m_descriptor = other.m_descriptor;
+      other.m_descriptor = -1;
+    }
+
+    return *this;
+  }
+  ~LockFile() {
+    if (m_descriptor >= 0) {
+      ::flock(m_descriptor, LOCK_UN);
+      ::close(m_descriptor);
+    }
+  }
+
+private:
+  int m_descriptor = -1;
+};
+
+core::Result<LockFile> acquire_lock(const std::filesystem::path &directory) {
+  const int descriptor = ::open((directory / k_lock_name).c_str(), O_CREAT | O_RDWR | O_NOFOLLOW, k_key_mode);
+
+  if (descriptor < 0) {
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
+  if (::flock(descriptor, LOCK_EX) != 0) {
+    ::close(descriptor);
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
+  return LockFile(descriptor);
+}
+
+bool pair_present(const TlsFiles &files) {
+  std::error_code status;
+  const bool certificate = std::filesystem::is_regular_file(files.certificate, status);
+
+  if (status) {
+    return false;
+  }
+
+  const bool key = std::filesystem::is_regular_file(files.key, status);
+
+  return key && !status && certificate;
 }
 
 } // namespace
@@ -145,9 +240,24 @@ core::Result<void> write_files(const TlsFiles &files, X509 *certificate, EVP_PKE
 core::Result<TlsFiles> load_or_create_certificate(const std::filesystem::path &directory) {
   const TlsFiles files{.certificate = directory / k_certificate_name, .key = directory / k_key_name};
 
-  std::error_code status;
+  if (pair_present(files)) {
+    return files;
+  }
 
-  if (std::filesystem::exists(files.certificate, status) && std::filesystem::exists(files.key, status)) {
+  std::error_code status;
+  std::filesystem::create_directories(directory, status);
+
+  if (status) {
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
+  const auto lock = acquire_lock(directory);
+
+  if (!lock.has_value()) {
+    return std::unexpected(lock.error());
+  }
+
+  if (pair_present(files)) {
     return files;
   }
 
@@ -170,6 +280,52 @@ core::Result<TlsFiles> load_or_create_certificate(const std::filesystem::path &d
   }
 
   return files;
+}
+
+core::Result<std::string> key_pin(const std::filesystem::path &certificate) {
+  const BioHandle input{BIO_new_file(certificate.c_str(), "r")};
+
+  if (input.get() == nullptr) {
+    return std::unexpected(core::CoreError::storage_failed);
+  }
+
+  const CertificateHandle parsed{PEM_read_bio_X509(input.get(), nullptr, nullptr, nullptr)};
+
+  if (parsed.get() == nullptr) {
+    return std::unexpected(core::CoreError::crypto_failed);
+  }
+
+  X509_PUBKEY *public_key = X509_get_X509_PUBKEY(parsed.get());
+
+  if (public_key == nullptr) {
+    return std::unexpected(core::CoreError::crypto_failed);
+  }
+
+  unsigned char *encoded = nullptr;
+  const int length = i2d_X509_PUBKEY(public_key, &encoded);
+  const EncodedBytes owned{encoded, release_encoded};
+
+  if (length <= 0) {
+    return std::unexpected(core::CoreError::crypto_failed);
+  }
+
+  std::array<unsigned char, k_fingerprint_size> digest{};
+  unsigned int written = 0;
+
+  if (EVP_Digest(owned.get(), static_cast<std::size_t>(length), digest.data(), &written, EVP_sha256(), nullptr) != 1 ||
+      written != k_fingerprint_size) {
+    return std::unexpected(core::CoreError::crypto_failed);
+  }
+
+  std::string text;
+  constexpr char k_digits[] = "0123456789abcdef";
+
+  for (const unsigned char byte : digest) {
+    text.push_back(k_digits[byte >> 4]);
+    text.push_back(k_digits[byte & k_low_nibble_mask]);
+  }
+
+  return text;
 }
 
 core::Result<std::string> certificate_fingerprint(const std::filesystem::path &certificate) {

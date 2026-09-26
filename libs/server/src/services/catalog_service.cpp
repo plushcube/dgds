@@ -7,41 +7,42 @@
 
 namespace dgds::server {
 
-core::Result<core::PublicationSummaries> CatalogService::catalog() {
-  const auto records = m_metadata.publications();
+core::Result<core::PublicationSummaryPage> CatalogService::catalog(core::PageRequest request) {
+  const auto page = m_metadata.publications(request.offset, request.limit);
 
-  if (!records.has_value()) {
-    return std::unexpected(records.error());
+  if (!page.has_value()) {
+    return std::unexpected(page.error());
   }
 
-  core::PublicationSummaries summaries;
-  summaries.reserve(records->size());
+  core::PublicationSummaryPage summaries{.request = request, .total = page->total, .records = {}};
+  summaries.records.reserve(page->records.size());
 
-  for (const auto &record : records.value()) {
-    summaries.push_back(summarise_publication(record));
+  for (const auto &record : page->records) {
+    summaries.records.push_back(summarise_publication(record));
   }
 
   return summaries;
 }
 
-core::Result<core::AuthorPublicationSummaries> CatalogService::author_publications(const core::UserId &author_id) {
-  const auto records = m_metadata.publications_of_author(author_id);
+core::Result<core::AuthorPublicationSummaryPage> CatalogService::author_publications(const core::UserId &author_id,
+                                                                                     core::PageRequest request) {
+  const auto page = m_metadata.publications_of_author(author_id, request.offset, request.limit);
 
-  if (!records.has_value()) {
-    return std::unexpected(records.error());
+  if (!page.has_value()) {
+    return std::unexpected(page.error());
   }
 
-  core::AuthorPublicationSummaries summaries;
-  summaries.reserve(records->size());
+  core::AuthorPublicationSummaryPage summaries{.request = request, .total = page->total, .records = {}};
+  summaries.records.reserve(page->records.size());
 
-  for (const auto &record : records.value()) {
+  for (const auto &record : page->records) {
     const auto purchases = m_metadata.purchase_count(record.publication_id);
 
     if (!purchases.has_value()) {
       return std::unexpected(purchases.error());
     }
 
-    summaries.push_back(
+    summaries.records.push_back(
         core::AuthorPublicationSummary{.publication = summarise_publication(record), .purchases = purchases.value()});
   }
 

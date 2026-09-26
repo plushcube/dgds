@@ -10,6 +10,7 @@
 #include <dgds/core/envelope/package.h>
 #include <dgds/core/envelope/receipt.h>
 #include <dgds/core/identity/content_identity.h>
+#include <dgds/core/models/protocol.h>
 #include <dgds/core/signature/author_signature.h>
 #include <dgds/stubs/blob_store/file_blob_store.h>
 #include <dgds/stubs/identity_registry/file_identity_registry.h>
@@ -199,10 +200,10 @@ TEST_F(PurchaseServiceTest, RejectsUnknownPublication) {
   ASSERT_FALSE(receipt.has_value());
   EXPECT_EQ(receipt.error(), CoreError::publication_not_found);
 
-  const auto purchases = m_metadata.purchases_of_user(buyer.user_id);
+  const auto purchases = m_metadata.purchases_of_user(buyer.user_id, 0, dgds::core::k_default_page_size);
 
   ASSERT_TRUE(purchases.has_value());
-  EXPECT_TRUE(purchases->empty());
+  EXPECT_TRUE(purchases->records.empty());
 }
 
 TEST_F(PurchaseServiceTest, RequiresReceiptForRequestingDevice) {
@@ -241,18 +242,20 @@ TEST_F(PurchaseServiceTest, ListsPurchasedWithPublicationMetadata) {
   const auto receipt = m_purchases.buy(buyer.user_id, publication.publication_id, device->public_key, k_purchased_at);
   ASSERT_TRUE(receipt.has_value());
 
-  const auto purchased = m_purchases.purchases_of(buyer.user_id);
+  const auto purchased = m_purchases.purchases_of(
+      buyer.user_id, dgds::core::PageRequest{.offset = 0, .limit = dgds::core::k_default_page_size});
 
   ASSERT_TRUE(purchased.has_value());
-  ASSERT_EQ(purchased->size(), 1U);
-  EXPECT_EQ((*purchased)[0].purchase_id, receipt->header.purchase_id);
-  EXPECT_EQ((*purchased)[0].purchased_at, k_purchased_at);
-  EXPECT_EQ((*purchased)[0].publication.publication_id, publication.publication_id);
-  EXPECT_EQ((*purchased)[0].publication.title, k_title);
-  EXPECT_EQ((*purchased)[0].publication.file_name, "файл.txt");
-  EXPECT_EQ((*purchased)[0].publication.size, k_text.size());
-  EXPECT_EQ((*purchased)[0].publication.published_at, 1700000000);
-  EXPECT_EQ((*purchased)[0].publication.author_name, author.name);
+  ASSERT_EQ(purchased->records.size(), 1U);
+  EXPECT_EQ(purchased->total, 1U);
+  EXPECT_EQ(purchased->records[0].purchase_id, receipt->header.purchase_id);
+  EXPECT_EQ(purchased->records[0].purchased_at, k_purchased_at);
+  EXPECT_EQ(purchased->records[0].publication.publication_id, publication.publication_id);
+  EXPECT_EQ(purchased->records[0].publication.title, k_title);
+  EXPECT_EQ(purchased->records[0].publication.file_name, "файл.txt");
+  EXPECT_EQ(purchased->records[0].publication.size, k_text.size());
+  EXPECT_EQ(purchased->records[0].publication.published_at, 1700000000);
+  EXPECT_EQ(purchased->records[0].publication.author_name, author.name);
 }
 
 TEST_F(PurchaseServiceTest, HidesPurchasesOfOthers) {
@@ -277,22 +280,24 @@ TEST_F(PurchaseServiceTest, HidesPurchasesOfOthers) {
   ASSERT_TRUE(first_receipt.has_value());
   ASSERT_TRUE(second_receipt.has_value());
 
-  const auto own = m_purchases.purchases_of(first.user_id);
+  const auto own = m_purchases.purchases_of(
+      first.user_id, dgds::core::PageRequest{.offset = 0, .limit = dgds::core::k_default_page_size});
 
   ASSERT_TRUE(own.has_value());
-  ASSERT_EQ(own->size(), 1U);
-  EXPECT_EQ((*own)[0].purchase_id, first_receipt->header.purchase_id);
-  EXPECT_EQ((*own)[0].publication.publication_id, first_publication.publication_id);
+  ASSERT_EQ(own->records.size(), 1U);
+  EXPECT_EQ(own->records[0].purchase_id, first_receipt->header.purchase_id);
+  EXPECT_EQ(own->records[0].publication.publication_id, first_publication.publication_id);
 
-  for (const auto &summary : own.value()) {
+  for (const auto &summary : own.value().records) {
     EXPECT_NE(summary.purchase_id, second_receipt->header.purchase_id);
     EXPECT_NE(summary.publication.publication_id, second_publication.publication_id);
   }
 
-  const auto stranger_purchases = m_purchases.purchases_of(stranger.user_id);
+  const auto stranger_purchases = m_purchases.purchases_of(
+      stranger.user_id, dgds::core::PageRequest{.offset = 0, .limit = dgds::core::k_default_page_size});
 
   ASSERT_TRUE(stranger_purchases.has_value());
-  EXPECT_TRUE(stranger_purchases->empty());
+  EXPECT_TRUE(stranger_purchases->records.empty());
 }
 
 TEST_F(PurchaseServiceTest, RestoresReceiptForAnotherDevice) {
@@ -419,9 +424,10 @@ TEST_F(PurchaseServiceTest, GrantsAuthorAccessWithoutPurchase) {
   ASSERT_TRUE(author_tally.has_value());
   EXPECT_EQ(author_tally.value(), 0U);
 
-  const auto purchased = m_purchases.purchases_of(author.user_id);
+  const auto purchased = m_purchases.purchases_of(
+      author.user_id, dgds::core::PageRequest{.offset = 0, .limit = dgds::core::k_default_page_size});
   ASSERT_TRUE(purchased.has_value());
-  EXPECT_TRUE(purchased.value().empty());
+  EXPECT_TRUE(purchased.value().records.empty());
 
   const auto own = m_metadata.find_purchase(publication.publication_id);
   ASSERT_FALSE(own.has_value());

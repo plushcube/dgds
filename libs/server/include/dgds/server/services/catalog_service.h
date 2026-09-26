@@ -12,8 +12,9 @@ class CatalogService {
 public:
   explicit CatalogService(core::MetadataRegistry &metadata) : m_metadata(metadata) {}
 
-  [[nodiscard]] core::Result<core::PublicationSummaries> catalog();
-  [[nodiscard]] core::Result<core::AuthorPublicationSummaries> author_publications(const core::UserId &author_id);
+  [[nodiscard]] core::Result<core::PublicationSummaryPage> catalog(core::PageRequest request);
+  [[nodiscard]] core::Result<core::AuthorPublicationSummaryPage> author_publications(const core::UserId &author_id,
+                                                                                     core::PageRequest request);
 
   [[nodiscard]] core::Result<core::ContentIdentity> context_identity(const core::UserId &user_id,
                                                                      const core::PurchaseId &context_id);

@@ -1,5 +1,7 @@
 #include <dgds/client/http/pinned_client.h>
 
+#include <dgds/core/models/protocol.h>
+
 #include <httplib.h>
 
 #include <expected>
@@ -44,6 +46,7 @@ core::Result<HttpClient> make_pinned_client(const Endpoint &endpoint, const Serv
     return std::unexpected(core::CoreError::crypto_failed);
   }
 
+  client->set_payload_max_length(core::k_max_response_bytes);
   client->set_ca_cert_path(trust.certificate.string());
   client->enable_server_certificate_verification(true);
 

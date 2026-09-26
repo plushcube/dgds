@@ -1,6 +1,6 @@
 find_package(Threads REQUIRED)
 
-dgds_add_test_area(stubs blob_store_test.cpp device_key_test.cpp
+dgds_add_test_area(stubs blob_store_test.cpp device_key_test.cpp file_storage_test.cpp
                           identity_registry_test.cpp key_store_test.cpp
                           metadata_registry_test.cpp receipt_store_test.cpp
                           store_separation_test.cpp)

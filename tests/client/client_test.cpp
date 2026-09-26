@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <string>
 
 namespace {
@@ -18,9 +19,9 @@ using dgds::client::DevicePublicKey;
 using dgds::client::Package;
 using dgds::client::PublicationDraft;
 using dgds::client::PublicationId;
-using dgds::client::PublicationSummaries;
+using dgds::client::PublicationSummaryPage;
 using dgds::client::PurchaseId;
-using dgds::client::PurchaseSummaries;
+using dgds::client::PurchaseSummaryPage;
 using dgds::client::Receipt;
 using dgds::client::Result;
 using dgds::client::Signature;
@@ -40,17 +41,23 @@ TEST_F(ClientFixture, RunsFullPurchaseScenario) {
 
   const auto catalog = m_client.catalog();
   ASSERT_TRUE(catalog.has_value());
-  ASSERT_EQ(catalog->size(), 1U);
-  EXPECT_EQ(catalog->front().publication_id, publication_id);
+  EXPECT_EQ(catalog->request.offset, 0U);
+  EXPECT_EQ(catalog->request.limit, dgds::core::k_default_page_size);
+  EXPECT_EQ(catalog->total, 1U);
+  ASSERT_EQ(catalog->records.size(), 1U);
+  EXPECT_EQ(catalog->records.front().publication_id, publication_id);
 
   const auto receipt = m_client.buy(buyer, publication_id);
   ASSERT_TRUE(receipt.has_value());
 
   const auto purchases = m_client.purchases(buyer);
   ASSERT_TRUE(purchases.has_value());
-  ASSERT_EQ(purchases->size(), 1U);
-  EXPECT_EQ(purchases->front().publication.publication_id, publication_id);
-  EXPECT_EQ(purchases->front().publication.title, std::string(k_client_title));
+  EXPECT_EQ(purchases->request.offset, 0U);
+  EXPECT_EQ(purchases->request.limit, dgds::core::k_default_page_size);
+  EXPECT_EQ(purchases->total, 1U);
+  ASSERT_EQ(purchases->records.size(), 1U);
+  EXPECT_EQ(purchases->records.front().publication.publication_id, publication_id);
+  EXPECT_EQ(purchases->records.front().publication.title, std::string(k_client_title));
 
   const auto content = m_client.fetch_content(buyer, receipt->header.purchase_id);
 
@@ -88,7 +95,8 @@ TEST_F(ClientFixture, AuthorReceivesOwnPublication) {
 
   const auto purchases = m_client.purchases(author.value());
   ASSERT_TRUE(purchases.has_value());
-  EXPECT_TRUE(purchases->empty());
+  EXPECT_TRUE(purchases->records.empty());
+  EXPECT_EQ(purchases->total, 0U);
 
   const auto content = m_client.fetch_content(author.value(), publication_id);
 
@@ -129,7 +137,9 @@ public:
 
   Result<Credentials> log_in(Content name) override { return m_inner.log_in(name); }
 
-  Result<PublicationSummaries> catalog() override { return m_inner.catalog(); }
+  Result<PublicationSummaryPage> catalog(std::size_t offset, std::size_t limit) override {
+    return m_inner.catalog(offset, limit);
+  }
 
   Result<PublicationId> publish(const Credentials &credentials, const PublicationDraft &draft,
                                 const AuthorPublicKey &author_key, const Signature &signature) override {
@@ -141,8 +151,9 @@ public:
     return m_inner.buy(credentials, publication_id, device_key);
   }
 
-  Result<PurchaseSummaries> purchases(const Credentials &credentials) override {
-    return m_inner.purchases(credentials);
+  Result<PurchaseSummaryPage> purchases(const Credentials &credentials, std::size_t offset,
+                                        std::size_t limit) override {
+    return m_inner.purchases(credentials, offset, limit);
   }
 
   Result<Receipt> restore_receipt(const Credentials &credentials, const PurchaseId &purchase_id,

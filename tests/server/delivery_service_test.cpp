@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <string_view>
 #include <unistd.h>
@@ -35,6 +36,7 @@ using dgds::core::canonical_form;
 using dgds::core::Content;
 using dgds::core::CoreError;
 using dgds::core::DeviceKeyPair;
+using dgds::core::DevicePublicKey;
 using dgds::core::k_package_version;
 using dgds::core::open_package;
 using dgds::core::open_receipt_key;
@@ -128,6 +130,22 @@ private:
   dgds::server::SessionStore m_sessions;
   static inline std::atomic<unsigned> counter{0};
 };
+
+TEST_F(DeliveryServiceTest, ReportsBrokenPublicationRecord) {
+  const UserAccount author = register_user("автор");
+  const PublicationRecord publication = publish(author, k_text);
+
+  const std::filesystem::path record =
+      m_root / "metadata" / "publications" / (std::to_string(publication.publication_id) + ".publication");
+  ASSERT_TRUE(std::filesystem::exists(record));
+  std::ofstream(record, std::ios::binary | std::ios::trunc) << "испорченная запись";
+
+  const DevicePublicKey device{};
+  const auto package = m_delivery.fetch_package(author.user_id, publication.publication_id, device);
+
+  ASSERT_FALSE(package.has_value());
+  EXPECT_EQ(package.error(), CoreError::storage_failed);
+}
 
 TEST_F(DeliveryServiceTest, DeliversPackageToOwner) {
   const UserAccount author = register_user("автор");

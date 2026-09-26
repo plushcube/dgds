@@ -54,6 +54,16 @@ protected:
   ServerProcess m_other;
 };
 
+TEST_F(PinnedConnectionTest, ServerAnnouncesTheKeyClientsPin) {
+  const auto trust = load_server_trust(m_own.certificate());
+  ASSERT_TRUE(trust.has_value());
+
+  const std::string &banner = m_own.banner();
+
+  EXPECT_NE(banner.find("Закрепление"), std::string::npos) << banner;
+  EXPECT_NE(banner.find(trust->pin.to_hex()), std::string::npos) << banner;
+}
+
 TEST_F(PinnedConnectionTest, AcceptsServerWithPinnedKey) {
   const auto trust = load_server_trust(m_own.certificate());
   ASSERT_TRUE(trust.has_value());

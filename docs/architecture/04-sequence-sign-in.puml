@@ -5,8 +5,8 @@ actor "Пользователь" as user
 participant "Приложение-хост" as host
 participant "Фасад\n(ApiClient)" as facade
 participant "Транспорт\n(ApiTransport)" as transport
-participant "HTTPS-поверхность\n(контроллеры)" as surface
-participant "Middleware\nверсия, частота, авторизация" as middleware
+participant "HTTP-привязка\n(httplib, ограничитель частоты)" as http
+participant "HTTPS-поверхность\n(api::Surface)" as surface
 participant "Сценарии" as services
 participant "Адаптеры портов" as adapters
 database "Реестр метаданных" as metadata
@@ -14,18 +14,20 @@ database "Реестр метаданных" as metadata
 user -> host: имя пользователя
 host -> facade: register_user(имя)
 facade -> transport: register_user(имя)
-transport -> surface: HTTPS: регистрация (имя, версия протокола)
-surface -> middleware: проверки запроса
-middleware -> services: register_user(имя)
+transport -> http: HTTPS: регистрация (имя, версия протокола)
+http -> http: ограничитель частоты по адресу запроса
+http -> surface: вызов операции регистрации
+surface -> surface: проверка версии, разбор имени
+surface -> services: register_user(имя)
 services -> adapters: захватить имя
 adapters -> metadata: names/<отпечаток имени>.name\n(атомарный захват имени)
-adapters -> metadata: users/<UUID>.user (идентификатор, имя)
+adapters -> metadata: users/<hex идентификатора>.user (идентификатор, имя)
 metadata --> adapters: подтверждение
 adapters --> services: пользователь создан
 note over adapters, metadata: Имя занимается отдельным маркером:\nв случае двух одновременных регистраций\nс одним именем не могут пройти обе
-services --> middleware: UserAccount { идентификатор, имя }
-middleware --> surface: ответ без ошибки
-surface --> transport: HTTPS: UserAccount
+services --> surface: UserAccount { идентификатор, имя }
+surface --> http: ответ без ошибки
+http --> transport: HTTPS: UserAccount
 transport --> facade: UserAccount
 facade --> host: UserAccount
 host --> user: регистрация принята
@@ -33,35 +35,44 @@ host --> user: регистрация принята
 user -> host: вход
 host -> facade: log_in(имя)
 facade -> transport: log_in(имя)
-transport -> surface: HTTPS: вход (имя, версия)
+transport -> http: HTTPS: вход (имя, версия)
+http -> http: ограничитель частоты по адресу запроса
+http -> surface: вызов операции входа
+surface -> surface: проверка версии, разбор имени
 surface -> services: log_in(имя)
 services -> adapters: найти пользователя по имени
-adapters -> metadata: чтение names/, users/
+adapters -> metadata: чтение users/
 metadata --> adapters: UserAccount
 services -> services: выдать токен сессии
-services --> middleware: Credentials { идентификатор, токен }
-middleware --> surface: ответ
-surface --> transport: HTTPS: Credentials
+services --> surface: Credentials { идентификатор, токен }
+surface --> http: ответ
+http --> transport: HTTPS: Credentials
 transport --> facade: Credentials
 facade --> host: Credentials
-note over facade: Токен сессии — единственное,\nчто библиотека хранит о пользователе
+note over facade: Фасад не хранит ни токен, ни данные пользователя:\nучётные данные передаются им в каждый вызов,\nна диске остаются только чеки
 
 user -> host: открыть каталог
-host -> facade: catalog()
-facade -> transport: catalog()
-transport -> surface: HTTPS: каталог (без учётных данных)
-surface -> middleware: проверки запроса
-middleware -> services: catalog()
-services -> adapters: список публикаций
-adapters -> metadata: чтение publications/
-metadata --> adapters: PublicationRecord[]
-adapters --> services: PublicationSummary[]\n(идентификатор, название, имя файла,\nразмер, дата, имя автора)
-services --> middleware: PublicationSummaries
-middleware --> surface: ответ
-surface --> transport: HTTPS: список публикаций
-transport --> facade: PublicationSummaries
-facade --> host: PublicationSummaries
-host --> user: список публикаций
+host -> facade: catalog(смещение, размер окна)
+facade -> transport: catalog(смещение, размер окна)
+transport -> http: HTTPS: каталог (смещение, размер окна, версия)
+http -> http: ограничитель частоты по адресу запроса
+http -> surface: вызов операции каталога
+surface -> surface: проверка версии, разбор окна\n(значения — строки; по умолчанию 20,\nмаксимум 100)
+surface -> services: catalog(смещение, размер окна)
+services -> adapters: выборка окна
+adapters -> metadata: имена publications/\n(идентификаторы из имён)
+metadata --> adapters: идентификаторы по возрастанию
+adapters -> metadata: чтение и разбор только записей окна
+metadata --> adapters: PublicationRecord[] окна
+adapters --> services: окно записей и общее число публикаций
+services --> surface: PublicationSummaryPage\n(идентификатор, название, имя файла,\nразмер, дата, имя автора)
+surface --> http: ответ
+http --> transport: HTTPS: окно списка\n(смещение, размер, общее число, записи)
+transport --> facade: PublicationSummaryPage
+facade --> host: PublicationSummaryPage
+host --> user: первое окно каталога
+
+note over adapters, metadata: Каталог читает только записи окна:\nимена дают идентификаторы, порядок по возрастанию,\nзаписи за окном не читаются вовсе
 
 note over surface, services: Каталог открыт без авторизации;\nостальные операции требуют действующих учётных данных
 

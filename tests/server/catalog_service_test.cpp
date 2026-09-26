@@ -4,6 +4,7 @@
 #include <dgds/server/services/user_service.h>
 
 #include <dgds/core/identity/content_identity.h>
+#include <dgds/core/models/protocol.h>
 #include <dgds/core/signature/author_signature.h>
 #include <dgds/stubs/blob_store/file_blob_store.h>
 #include <dgds/stubs/identity_registry/file_identity_registry.h>
@@ -52,9 +53,9 @@ Result<Signature> sign_content(Content text, Content author_name, const AuthorPr
   return sign_author(identity.value(), author_name, key);
 }
 
-const dgds::core::AuthorPublicationSummary *find_authored(const dgds::core::AuthorPublicationSummaries &summaries,
+const dgds::core::AuthorPublicationSummary *find_authored(const dgds::core::AuthorPublicationSummaryPage &page,
                                                           dgds::core::PublicationId publication_id) {
-  for (const auto &summary : summaries) {
+  for (const auto &summary : page.records) {
     if (summary.publication.publication_id == publication_id) {
       return &summary;
     }
@@ -118,16 +119,18 @@ TEST_F(CatalogServiceTest, ListsCatalogWithRequiredFields) {
 
   const auto publication = publish(author, marked, "название", k_published_at);
 
-  const auto catalog = m_catalog.catalog();
+  const auto catalog =
+      m_catalog.catalog(dgds::core::PageRequest{.offset = 0, .limit = dgds::core::k_default_page_size});
 
   ASSERT_TRUE(catalog.has_value());
-  ASSERT_EQ(catalog->size(), 1U);
-  EXPECT_EQ((*catalog)[0].publication_id, publication.publication_id);
-  EXPECT_EQ((*catalog)[0].title, "название");
-  EXPECT_EQ((*catalog)[0].file_name, "файл.txt");
-  EXPECT_EQ((*catalog)[0].size, k_started_at.size() + k_text.size());
-  EXPECT_EQ((*catalog)[0].published_at, k_published_at);
-  EXPECT_EQ((*catalog)[0].author_name, author.name);
+  ASSERT_EQ(catalog->records.size(), 1U);
+  EXPECT_EQ(catalog->total, 1U);
+  EXPECT_EQ(catalog->records[0].publication_id, publication.publication_id);
+  EXPECT_EQ(catalog->records[0].title, "название");
+  EXPECT_EQ(catalog->records[0].file_name, "файл.txt");
+  EXPECT_EQ(catalog->records[0].size, k_started_at.size() + k_text.size());
+  EXPECT_EQ(catalog->records[0].published_at, k_published_at);
+  EXPECT_EQ(catalog->records[0].author_name, author.name);
 }
 
 TEST_F(CatalogServiceTest, ListsCatalogWithoutCredentials) {
@@ -136,12 +139,13 @@ TEST_F(CatalogServiceTest, ListsCatalogWithoutCredentials) {
 
   CatalogService anonymous{m_metadata};
 
-  const auto catalog = anonymous.catalog();
+  const auto catalog =
+      anonymous.catalog(dgds::core::PageRequest{.offset = 0, .limit = dgds::core::k_default_page_size});
 
   ASSERT_TRUE(catalog.has_value());
-  ASSERT_EQ(catalog->size(), 1U);
-  EXPECT_EQ((*catalog)[0].publication_id, publication.publication_id);
-  EXPECT_EQ((*catalog)[0].title, "название");
+  ASSERT_EQ(catalog->records.size(), 1U);
+  EXPECT_EQ(catalog->records[0].publication_id, publication.publication_id);
+  EXPECT_EQ(catalog->records[0].title, "название");
 }
 
 TEST_F(CatalogServiceTest, ListsOnlyOwnPublications) {
@@ -152,18 +156,21 @@ TEST_F(CatalogServiceTest, ListsOnlyOwnPublications) {
   const auto first_two = publish(first, "второй текст", "вторая", k_published_at + 1);
   const auto second_one = publish(second, "третий текст", "третья", k_published_at + 2);
 
-  const auto own = m_catalog.author_publications(first.user_id);
+  const auto own = m_catalog.author_publications(
+      first.user_id, dgds::core::PageRequest{.offset = 0, .limit = dgds::core::k_default_page_size});
 
   ASSERT_TRUE(own.has_value());
-  ASSERT_EQ(own->size(), 2U);
+  ASSERT_EQ(own->records.size(), 2U);
+  EXPECT_EQ(own->total, 2U);
   EXPECT_NE(find_authored(own.value(), first_one.publication_id), nullptr);
   EXPECT_NE(find_authored(own.value(), first_two.publication_id), nullptr);
   EXPECT_EQ(find_authored(own.value(), second_one.publication_id), nullptr);
 
-  const auto other = m_catalog.author_publications(second.user_id);
+  const auto other = m_catalog.author_publications(
+      second.user_id, dgds::core::PageRequest{.offset = 0, .limit = dgds::core::k_default_page_size});
 
   ASSERT_TRUE(other.has_value());
-  ASSERT_EQ(other->size(), 1U);
+  ASSERT_EQ(other->records.size(), 1U);
   EXPECT_NE(find_authored(other.value(), second_one.publication_id), nullptr);
 }
 
@@ -187,10 +194,12 @@ TEST_F(CatalogServiceTest, CountsPurchasesInAuthorList) {
                                                            .purchased_at = k_published_at + 11})
                   .has_value());
 
-  const auto own = m_catalog.author_publications(author.user_id);
+  const auto own = m_catalog.author_publications(
+      author.user_id, dgds::core::PageRequest{.offset = 0, .limit = dgds::core::k_default_page_size});
 
   ASSERT_TRUE(own.has_value());
-  ASSERT_EQ(own->size(), 2U);
+  ASSERT_EQ(own->records.size(), 2U);
+  EXPECT_EQ(own->total, 2U);
 
   const auto *sold_summary = find_authored(own.value(), sold.publication_id);
   const auto *unsold_summary = find_authored(own.value(), unsold.publication_id);

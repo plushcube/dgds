@@ -5,6 +5,7 @@
 #include <dgds/client/ports/api_transport.h>
 #include <dgds/core/models/errors.h>
 
+#include <cstddef>
 #include <utility>
 
 namespace dgds::client {
@@ -15,12 +16,13 @@ public:
 
   [[nodiscard]] Result<UserAccount> register_user(Content name) override;
   [[nodiscard]] Result<Credentials> log_in(Content name) override;
-  [[nodiscard]] Result<PublicationSummaries> catalog() override;
+  [[nodiscard]] Result<PublicationSummaryPage> catalog(std::size_t offset, std::size_t limit) override;
   [[nodiscard]] Result<PublicationId> publish(const Credentials &credentials, const PublicationDraft &draft,
                                               const AuthorPublicKey &author_key, const Signature &signature) override;
   [[nodiscard]] Result<Receipt> buy(const Credentials &credentials, const PublicationId &publication_id,
                                     const DevicePublicKey &device_key) override;
-  [[nodiscard]] Result<PurchaseSummaries> purchases(const Credentials &credentials) override;
+  [[nodiscard]] Result<PurchaseSummaryPage> purchases(const Credentials &credentials, std::size_t offset,
+                                                      std::size_t limit) override;
   [[nodiscard]] Result<Receipt> restore_receipt(const Credentials &credentials, const PurchaseId &purchase_id,
                                                 const DevicePublicKey &device_key) override;
   [[nodiscard]] Result<ContentIdentity> context_identity(const Credentials &credentials,

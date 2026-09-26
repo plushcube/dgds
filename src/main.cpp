@@ -77,8 +77,9 @@ int main(int argc, char *argv[]) {
   }
 
   const auto fingerprint = dgds::app::certificate_fingerprint(tls->certificate);
+  const auto pin = dgds::app::key_pin(tls->certificate);
 
-  if (!fingerprint.has_value()) {
+  if (!fingerprint.has_value() || !pin.has_value()) {
     std::cerr << "Не удалось прочитать сертификат сервера.\n";
     return 1;
   }
@@ -100,7 +101,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  dgds::server::http::bind(server, surface);
+  dgds::server::http::bind(server, surface, limiter, wall_clock);
 
   const int port = configuration.port == 0
                        ? server.bind_to_any_port(configuration.host)
@@ -115,10 +116,14 @@ int main(int argc, char *argv[]) {
             << "Каталог данных:  " << configuration.storage_root.string() << '\n'
             << "Сертификат:      " << tls->certificate.string() << '\n'
             << "Отпечаток:       " << fingerprint.value() << '\n'
+            << "Закрепление:     " << pin.value() << '\n'
             << "Слушаю https://" << configuration.host << ':' << port << '\n'
             << std::flush;
 
-  server.listen_after_bind();
+  if (!server.listen_after_bind()) {
+    std::cerr << "Не удалось начать прослушивание " << configuration.host << ':' << port << '\n';
+    return 1;
+  }
 
   return 0;
 }

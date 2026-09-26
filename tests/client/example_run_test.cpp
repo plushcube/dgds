@@ -1,6 +1,7 @@
 #include "server_process.h"
 
 #include <dgds/core/identity/canonical_form.h>
+#include <dgds/core/models/protocol.h>
 #include <dgds/server/models/attribution.h>
 #include <dgds/server/services/attribution_service.h>
 #include <dgds/stubs/metadata_registry/file_metadata_registry.h>
@@ -26,6 +27,7 @@ using dgds::stubs::FileMetadataRegistry;
 using dgds::test::ServerProcess;
 
 constexpr std::string_view k_marker = "демонстрационная строка";
+constexpr std::string_view k_sample_line = "демонстрационного текста для покупателя";
 
 std::string sample_text() {
   std::string text;
@@ -106,12 +108,40 @@ private:
   static inline std::atomic<unsigned> counter{0};
 };
 
+TEST_F(ExampleRunTest, RefusesOptionValueThatLooksLikeOption) {
+  const RunResult result = run("--text --version");
+
+  EXPECT_EQ(result.status, 1);
+  EXPECT_NE(result.output.find("--certificate"), std::string::npos);
+}
+
+TEST_F(ExampleRunTest, RunsTwiceOnSameStand) {
+  const RunResult first = run("--text '" + m_text.string() + "'");
+
+  ASSERT_EQ(first.status, 0) << first.output;
+  EXPECT_NE(first.output.find("Публикация"), std::string::npos);
+
+  const RunResult second = run("");
+
+  ASSERT_EQ(second.status, 0) << second.output;
+  EXPECT_NE(second.output.find("Публикация"), std::string::npos);
+  EXPECT_NE(canonical_form(second.output).find(k_sample_line), std::string::npos);
+}
+
+TEST_F(ExampleRunTest, ReportsUnreadableTextFile) {
+  const RunResult result = run("--text '" + (m_root / "нет-такого-файла").string() + "'");
+
+  EXPECT_EQ(result.status, 1);
+  EXPECT_NE(result.output.find("чтение файла"), std::string::npos);
+  EXPECT_EQ(canonical_form(result.output).find(k_marker), std::string::npos);
+}
+
 TEST_F(ExampleRunTest, PrintsPurchasedContentAndLeavesNoPlaintext) {
   const RunResult result = run("--text '" + m_text.string() + "'");
 
   ASSERT_EQ(result.status, 0) << result.output;
   EXPECT_NE(result.output.find("Публикация"), std::string::npos);
-  EXPECT_NE(result.output.find("Каталог     1 публикаций"), std::string::npos) << result.output;
+  EXPECT_NE(result.output.find("Каталог     1 из 1 публикаций"), std::string::npos) << result.output;
   EXPECT_NE(canonical_form(result.output).find(k_marker), std::string::npos);
 
   EXPECT_TRUE(std::filesystem::exists(device() / "device.key")) << "устройство не создало ключ";
@@ -142,11 +172,11 @@ TEST_F(ExampleRunTest, PrintsPurchasedContentAndLeavesNoPlaintext) {
   ASSERT_TRUE(report.has_value());
   EXPECT_EQ(report->kind, AccessKind::purchase);
 
-  const auto publications = metadata.publications();
+  const auto publications = metadata.publications(0, dgds::core::k_default_page_size);
   ASSERT_TRUE(publications.has_value());
-  ASSERT_EQ(publications->size(), 1U);
-  EXPECT_EQ(report->publication_id, publications->front().publication_id);
-  EXPECT_NE(report->user_id, publications->front().author_id);
+  ASSERT_EQ(publications->records.size(), 1U);
+  EXPECT_EQ(report->publication_id, publications->records.front().publication_id);
+  EXPECT_NE(report->user_id, publications->records.front().author_id);
 }
 
 TEST_F(ExampleRunTest, RefusesUnknownOption) {

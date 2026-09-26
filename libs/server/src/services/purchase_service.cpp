@@ -11,6 +11,27 @@
 #include <expected>
 
 namespace dgds::server {
+namespace {
+
+core::Result<core::Receipt> existing_receipt(core::MetadataRegistry &metadata, const core::UserId &user_id,
+                                             const core::PublicationId &publication_id,
+                                             const core::DevicePublicKey &device_key) {
+  const auto purchase = metadata.find_purchase_of(user_id, publication_id);
+
+  if (!purchase.has_value()) {
+    return std::unexpected(purchase.error());
+  }
+
+  const auto stored = metadata.find_receipt(purchase->purchase_id, device_key);
+
+  if (!stored.has_value()) {
+    return std::unexpected(stored.error());
+  }
+
+  return stored->receipt;
+}
+
+} // namespace
 
 core::Result<core::Receipt> PurchaseService::buy(const core::UserId &user_id, const core::PublicationId &publication_id,
                                                  const core::DevicePublicKey &device_key,
@@ -62,7 +83,18 @@ core::Result<core::Receipt> PurchaseService::buy(const core::UserId &user_id, co
   const auto added = m_metadata.add_purchase(purchase);
 
   if (!added.has_value()) {
-    return std::unexpected(added.error());
+    if (added.error() != core::CoreError::record_exists) {
+      return std::unexpected(added.error());
+    }
+
+    const auto concurrent = existing_receipt(m_metadata, user_id, publication_id, device_key);
+
+    if (!concurrent.has_value()) {
+      return std::unexpected(concurrent.error() == core::CoreError::purchase_not_found ? added.error()
+                                                                                       : concurrent.error());
+    }
+
+    return concurrent.value();
   }
 
   return issue_receipt(purchase.purchase_id, purchase.user_id, publication.value(), purchase.purchased_at, device_key,
@@ -122,26 +154,27 @@ PurchaseService::issue_receipt(const core::PurchaseId &context_id, const core::U
   return receipt;
 }
 
-core::Result<core::PurchaseSummaries> PurchaseService::purchases_of(const core::UserId &user_id) {
-  const auto purchases = m_metadata.purchases_of_user(user_id);
+core::Result<core::PurchaseSummaryPage> PurchaseService::purchases_of(const core::UserId &user_id,
+                                                                      core::PageRequest request) {
+  const auto page = m_metadata.purchases_of_user(user_id, request.offset, request.limit);
 
-  if (!purchases.has_value()) {
-    return std::unexpected(purchases.error());
+  if (!page.has_value()) {
+    return std::unexpected(page.error());
   }
 
-  core::PurchaseSummaries summaries;
-  summaries.reserve(purchases->size());
+  core::PurchaseSummaryPage summaries{.request = request, .total = page->total, .records = {}};
+  summaries.records.reserve(page->records.size());
 
-  for (const auto &purchase : purchases.value()) {
+  for (const auto &purchase : page->records) {
     const auto publication = m_metadata.find_publication(purchase.publication_id);
 
     if (!publication.has_value()) {
       return std::unexpected(publication.error());
     }
 
-    summaries.push_back(core::PurchaseSummary{.purchase_id = purchase.purchase_id,
-                                              .publication = summarise_publication(publication.value()),
-                                              .purchased_at = purchase.purchased_at});
+    summaries.records.push_back(core::PurchaseSummary{.purchase_id = purchase.purchase_id,
+                                                      .publication = summarise_publication(publication.value()),
+                                                      .purchased_at = purchase.purchased_at});
   }
 
   return summaries;

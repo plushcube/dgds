@@ -1,5 +1,6 @@
 #include <dgds/core/codec/binary.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -7,8 +8,10 @@
 namespace dgds::core {
 
 void append_integer(ContentBuffer &data, std::uint64_t value, std::size_t width) {
-  for (std::size_t index = 0; index < width; ++index) {
-    const std::size_t shift = (width - 1 - index) * k_bits_per_byte;
+  const std::size_t bytes = std::min(width, k_integer_size);
+
+  for (std::size_t index = 0; index < bytes; ++index) {
+    const std::size_t shift = (bytes - 1 - index) * k_bits_per_byte;
     data.push_back(static_cast<char>((value >> shift) & 0xFF));
   }
 }
@@ -31,6 +34,10 @@ bool Reader::read_byte(std::uint8_t &value) {
 }
 
 bool Reader::read_integer(std::uint64_t &value, std::size_t width) {
+  if (width > k_integer_size || width > remaining()) {
+    return false;
+  }
+
   value = 0;
 
   for (std::size_t index = 0; index < width; ++index) {

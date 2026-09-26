@@ -21,14 +21,16 @@ public:
   [[nodiscard]] core::Result<void> add_publication(const core::PublicationRecord &publication) override;
   [[nodiscard]] core::Result<core::PublicationRecord>
   find_publication(const core::PublicationId &publication_id) override;
-  [[nodiscard]] core::Result<core::PublicationRecords> publications() override;
-  [[nodiscard]] core::Result<core::PublicationRecords> publications_of_author(const core::UserId &author_id) override;
+  [[nodiscard]] core::Result<core::PublicationPage> publications(std::size_t offset, std::size_t limit) override;
+  [[nodiscard]] core::Result<core::PublicationPage>
+  publications_of_author(const core::UserId &author_id, std::size_t offset, std::size_t limit) override;
 
   [[nodiscard]] core::Result<void> add_purchase(const core::PurchaseRecord &purchase) override;
   [[nodiscard]] core::Result<core::PurchaseRecord> find_purchase(const core::PurchaseId &purchase_id) override;
   [[nodiscard]] core::Result<core::PurchaseRecord> find_purchase_of(const core::UserId &user_id,
                                                                     const core::PublicationId &publication_id) override;
-  [[nodiscard]] core::Result<core::PurchaseRecords> purchases_of_user(const core::UserId &user_id) override;
+  [[nodiscard]] core::Result<core::PurchasePage> purchases_of_user(const core::UserId &user_id, std::size_t offset,
+                                                                   std::size_t limit) override;
   [[nodiscard]] core::Result<std::size_t> purchase_count(const core::PublicationId &publication_id) override;
 
   [[nodiscard]] core::Result<void> save_receipt(const core::ReceiptRecord &record) override;
@@ -55,6 +57,12 @@ private:
     return purchases_dir() / (std::to_string(purchase_id) + k_purchase_suffix);
   }
 
+  [[nodiscard]] std::filesystem::path pair_path(const core::UserId &user_id,
+                                                const core::PublicationId &publication_id) const {
+    return m_root / k_pairs_directory /
+           (core::to_hex(user_id.data(), user_id.size()) + "-" + std::to_string(publication_id) + k_pair_suffix);
+  }
+
   [[nodiscard]] std::filesystem::path receipt_path(const core::PurchaseId &purchase_id,
                                                    const core::DevicePublicKey &device_key) const {
     return m_root / k_receipts_directory /
@@ -66,6 +74,8 @@ private:
   static constexpr const char *k_name_suffix = ".name";
   static constexpr const char *k_publications_directory = "publications";
   static constexpr const char *k_purchases_directory = "purchases";
+  static constexpr const char *k_pairs_directory = "pairs";
+  static constexpr const char *k_pair_suffix = ".pair";
   static constexpr const char *k_receipts_directory = "receipts";
   static constexpr const char *k_user_suffix = ".user";
   static constexpr const char *k_publication_suffix = ".publication";

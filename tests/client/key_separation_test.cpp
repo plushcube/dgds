@@ -3,6 +3,7 @@
 #include <dgds/client/http/http_transport.h>
 
 #include <dgds/core/identity/canonical_form.h>
+#include <dgds/core/models/protocol.h>
 
 #include <gtest/gtest.h>
 
@@ -114,13 +115,15 @@ TEST_F(KeySeparationTest, ContentStoreWithoutKeyStoreCannotBeDecrypted) {
 
   const auto credentials = stolen_credentials();
 
-  const auto catalog = m_stolen_transport->catalog();
+  const auto catalog = m_stolen_transport->catalog(0, dgds::core::k_default_page_size);
   ASSERT_TRUE(catalog.has_value());
-  EXPECT_EQ(catalog->size(), 1U);
+  EXPECT_EQ(catalog->total, 1U);
+  EXPECT_EQ(catalog->records.size(), 1U);
 
-  const auto purchases = m_stolen_transport->purchases(credentials);
+  const auto purchases = m_stolen_transport->purchases(credentials, 0, dgds::core::k_default_page_size);
   ASSERT_TRUE(purchases.has_value());
-  EXPECT_EQ(purchases->size(), 1U);
+  EXPECT_EQ(purchases->total, 1U);
+  EXPECT_EQ(purchases->records.size(), 1U);
 
   const auto package = m_stolen_transport->fetch_package(credentials, m_purchase_id, device_public_key());
 

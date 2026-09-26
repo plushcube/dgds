@@ -3,6 +3,7 @@
 #include <dgds/server/services/user_service.h>
 
 #include <dgds/core/identity/content_identity.h>
+#include <dgds/core/models/protocol.h>
 #include <dgds/core/signature/author_signature.h>
 #include <dgds/stubs/blob_store/file_blob_store.h>
 #include <dgds/stubs/identity_registry/file_identity_registry.h>
@@ -16,6 +17,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <string_view>
 #include <unistd.h>
@@ -87,6 +89,36 @@ private:
   static inline std::atomic<unsigned> counter{0};
 };
 
+TEST_F(PublicationServiceTest, ReleasesClaimedIdentityWhenPublicationFails) {
+  const UserAccount author = register_author("автор");
+
+  const auto keys = generate_author_key();
+  ASSERT_TRUE(keys.has_value());
+
+  const auto signature = sign_content(k_text, author.name, keys->private_key);
+  ASSERT_TRUE(signature.has_value());
+
+  const PublicationDraft draft{
+      .title = std::string(k_title), .file_name = std::string(k_file_name), .content = std::string(k_text)};
+
+  std::filesystem::remove_all(m_root / "blobs");
+  std::ofstream(m_root / "blobs") << "не каталог";
+
+  const auto broken =
+      m_publications.publish(author.user_id, draft, keys->public_key, signature.value(), k_published_at);
+
+  ASSERT_FALSE(broken.has_value());
+  EXPECT_EQ(broken.error(), CoreError::storage_failed);
+
+  std::filesystem::remove(m_root / "blobs");
+
+  const auto publication =
+      m_publications.publish(author.user_id, draft, keys->public_key, signature.value(), k_published_at);
+
+  ASSERT_TRUE(publication.has_value()) << dgds::core::code_of(publication.error());
+  EXPECT_EQ(publication->identity, dgds::core::content_identity(k_text).value());
+}
+
 TEST_F(PublicationServiceTest, PublishesContentSealedForDelivery) {
   const UserAccount author = register_author("автор");
 
@@ -116,11 +148,11 @@ TEST_F(PublicationServiceTest, PublishesContentSealedForDelivery) {
   ASSERT_TRUE(identity.has_value());
   EXPECT_EQ(publication->identity, identity.value());
 
-  const auto catalog = m_metadata.publications();
+  const auto catalog = m_metadata.publications(0, dgds::core::k_default_page_size);
 
   ASSERT_TRUE(catalog.has_value());
-  ASSERT_EQ(catalog->size(), 1U);
-  EXPECT_EQ((*catalog)[0].publication_id, publication->publication_id);
+  ASSERT_EQ(catalog->records.size(), 1U);
+  EXPECT_EQ(catalog->records[0].publication_id, publication->publication_id);
 
   const auto stored = m_blobs.load(identity.value());
   ASSERT_TRUE(stored.has_value());
@@ -160,13 +192,13 @@ TEST_F(PublicationServiceTest, RejectsDuplicateWithoutRevealingMetadata) {
   ASSERT_FALSE(repeated.has_value());
   EXPECT_EQ(repeated.error(), CoreError::content_duplicate);
 
-  const auto catalog = m_metadata.publications();
+  const auto catalog = m_metadata.publications(0, dgds::core::k_default_page_size);
 
   ASSERT_TRUE(catalog.has_value());
-  ASSERT_EQ(catalog->size(), 1U);
-  EXPECT_EQ((*catalog)[0].author_id, first.user_id);
-  EXPECT_EQ((*catalog)[0].title, k_title);
-  EXPECT_EQ((*catalog)[0].file_name, k_file_name);
+  ASSERT_EQ(catalog->records.size(), 1U);
+  EXPECT_EQ(catalog->records[0].author_id, first.user_id);
+  EXPECT_EQ(catalog->records[0].title, k_title);
+  EXPECT_EQ(catalog->records[0].file_name, k_file_name);
 }
 
 TEST_F(PublicationServiceTest, RejectsForgedSignature) {
@@ -190,9 +222,9 @@ TEST_F(PublicationServiceTest, RejectsForgedSignature) {
   ASSERT_FALSE(rejected.has_value());
   EXPECT_EQ(rejected.error(), CoreError::signature_invalid);
 
-  const auto catalog = m_metadata.publications();
+  const auto catalog = m_metadata.publications(0, dgds::core::k_default_page_size);
   ASSERT_TRUE(catalog.has_value());
-  EXPECT_TRUE(catalog->empty());
+  EXPECT_TRUE(catalog->records.empty());
 
   const auto legitimate = sign_content(k_text, author.name, author_keys->private_key);
   ASSERT_TRUE(legitimate.has_value());

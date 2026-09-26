@@ -28,7 +28,8 @@ core::Result<Access> resolve_context(const core::PurchaseId &context_id, core::M
   const auto publication = metadata.find_publication(context_id);
 
   if (!publication.has_value()) {
-    return std::unexpected(purchase.error());
+    return std::unexpected(publication.error() == core::CoreError::publication_not_found ? purchase.error()
+                                                                                         : publication.error());
   }
 
   return Access{.publication = publication.value(),

@@ -10,7 +10,9 @@
 #include <dgds/version.h>
 
 #include <charconv>
+#include <chrono>
 #include <cstddef>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -37,9 +39,17 @@ enum class Command {
   invalid,
 };
 
-std::filesystem::path default_device_root() {
-  return std::filesystem::temp_directory_path() / ("dgds-device-" + std::to_string(::getpid()));
+std::filesystem::path home_directory() {
+  const char *home = std::getenv("HOME");
+
+  if (home == nullptr || *home == '\0') {
+    return std::filesystem::current_path();
+  }
+
+  return home;
 }
+
+std::filesystem::path default_device_root() { return home_directory() / ".dgds-device"; }
 
 struct Options {
   Command command = Command::run;
@@ -96,7 +106,14 @@ Options parse_arguments(int argc, char *argv[]) {
       return options;
     }
 
-    const std::string value = argv[++index];
+    const std::string_view raw = argv[++index];
+
+    if (raw.empty() || raw.starts_with("--")) {
+      options.command = Command::invalid;
+      return options;
+    }
+
+    const std::string value{raw};
 
     if (argument == "--host") {
       options.host = value;
@@ -142,7 +159,10 @@ Options parse_arguments(int argc, char *argv[]) {
 }
 
 std::string sample_text() {
-  std::string text;
+  const auto now =
+      std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch());
+
+  std::string text = "прогон " + std::to_string(now.count()) + "\n";
 
   for (std::size_t line = 0; line < 20; ++line) {
     text += "строка " + std::to_string(line) + " демонстрационного текста для покупателя\n";
@@ -151,12 +171,17 @@ std::string sample_text() {
   return text;
 }
 
-std::string published_text(const Options &options) {
+std::optional<std::string> published_text(const Options &options) {
   if (!options.text.has_value()) {
     return sample_text();
   }
 
   std::ifstream input(options.text.value(), std::ios::binary);
+
+  if (!input.is_open()) {
+    return std::nullopt;
+  }
+
   std::ostringstream buffer;
   buffer << input.rdbuf();
 
@@ -204,7 +229,7 @@ int main(int argc, char *argv[]) {
 
   const auto author = client.register_user(k_author);
 
-  if (!author.has_value()) {
+  if (!author.has_value() && author.error() != dgds::core::CoreError::user_name_taken) {
     return report("регистрацию автора", author.error());
   }
 
@@ -214,9 +239,15 @@ int main(int argc, char *argv[]) {
     return report("вход автора", author_credentials.error());
   }
 
-  const std::string text = published_text(options);
+  const auto text = published_text(options);
+
+  if (!text.has_value()) {
+    std::cerr << "Не удалось выполнить: чтение файла " << options.text->string() << '\n';
+    return 1;
+  }
+
   const auto author_keys = dgds::core::generate_author_key();
-  const auto identity = dgds::core::content_identity(text);
+  const auto identity = dgds::core::content_identity(text.value());
 
   if (!author_keys.has_value()) {
     return report("ключ автора", author_keys.error());
@@ -226,39 +257,43 @@ int main(int argc, char *argv[]) {
     return report("идентичность контента", identity.error());
   }
 
-  const auto signature = dgds::core::sign_author(identity.value(), author->name, author_keys->private_key);
+  const auto signature = dgds::core::sign_author(identity.value(), k_author, author_keys->private_key);
 
   if (!signature.has_value()) {
     return report("подпись контента", signature.error());
   }
 
   const dgds::core::PublicationDraft draft{
-      .title = std::string(k_title), .file_name = std::string(k_file_name), .content = text};
+      .title = std::string(k_title), .file_name = std::string(k_file_name), .content = text.value()};
   const auto publication =
       client.publish(author_credentials.value(), draft, author_keys->public_key, signature.value());
 
   if (!publication.has_value()) {
+    if (publication.error() == dgds::core::CoreError::content_duplicate) {
+      std::cerr << "Этот файл уже опубликован этим автором: повторная публикация того же содержимого невозможна.\n";
+    }
+
     return report("публикацию", publication.error());
   }
 
   std::cout << "Публикация  " << publication.value() << " «" << k_title << "» автором «" << k_author << "»\n";
 
-  const auto catalog = client.catalog();
+  const auto catalog = client.catalog(0, dgds::core::k_default_page_size);
 
   if (!catalog.has_value()) {
     return report("просмотр каталога", catalog.error());
   }
 
-  std::cout << "Каталог     " << catalog->size() << " публикаций:\n";
+  std::cout << "Каталог     " << catalog->records.size() << " из " << catalog->total << " публикаций:\n";
 
-  for (const auto &summary : catalog.value()) {
+  for (const auto &summary : catalog->records) {
     std::cout << "            " << summary.publication_id << " «" << summary.title << "» " << summary.author_name
               << ", " << summary.size << " байт\n";
   }
 
   const auto buyer = client.register_user(k_buyer);
 
-  if (!buyer.has_value()) {
+  if (!buyer.has_value() && buyer.error() != dgds::core::CoreError::user_name_taken) {
     return report("регистрацию покупателя", buyer.error());
   }
 

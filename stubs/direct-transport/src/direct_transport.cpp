@@ -46,14 +46,15 @@ Result<Receipt> DirectTransport::buy(const Credentials &credentials, const Publi
   return m_purchases.buy(user_id.value(), publication_id, device_key, m_clock());
 }
 
-Result<PurchaseSummaries> DirectTransport::purchases(const Credentials &credentials) {
+Result<core::PurchaseSummaryPage> DirectTransport::purchases(const Credentials &credentials, std::size_t offset,
+                                                             std::size_t limit) {
   const auto user_id = authorized(credentials);
 
   if (!user_id.has_value()) {
     return std::unexpected(user_id.error());
   }
 
-  return m_purchases.purchases_of(user_id.value());
+  return m_purchases.purchases_of(user_id.value(), core::PageRequest{.offset = offset, .limit = limit});
 }
 
 Result<Receipt> DirectTransport::restore_receipt(const Credentials &credentials, const PurchaseId &purchase_id,

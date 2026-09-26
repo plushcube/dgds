@@ -26,12 +26,13 @@ namespace dgds::server::api {
 [[nodiscard]] std::optional<core::DevicePublicKey> read_device_key(core::Content body);
 [[nodiscard]] std::optional<core::AuthorPublicKey> read_author_key(core::Content body);
 [[nodiscard]] std::optional<core::Signature> read_signature(core::Content body);
+[[nodiscard]] std::optional<core::PageRequest> read_page(core::Content body);
 
 [[nodiscard]] std::string encode(const core::UserAccount &account);
 [[nodiscard]] std::string encode(const core::Credentials &credentials);
-[[nodiscard]] std::string encode(const core::PublicationSummaries &summaries);
-[[nodiscard]] std::string encode(const core::AuthorPublicationSummaries &summaries);
-[[nodiscard]] std::string encode(const core::PurchaseSummaries &summaries);
+[[nodiscard]] std::string encode(const core::PublicationSummaryPage &page);
+[[nodiscard]] std::string encode(const core::AuthorPublicationSummaryPage &page);
+[[nodiscard]] std::string encode(const core::PurchaseSummaryPage &page);
 [[nodiscard]] std::string encode(const core::Receipt &receipt);
 [[nodiscard]] std::string encode(const core::Package &package);
 [[nodiscard]] std::string encode(const core::ContentIdentity &identity);

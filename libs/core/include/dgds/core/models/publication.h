@@ -3,6 +3,7 @@
 #include <dgds/core/models/author.h>
 #include <dgds/core/models/content.h>
 #include <dgds/core/models/identity.h>
+#include <dgds/core/models/page.h>
 #include <dgds/core/models/timestamp.h>
 #include <dgds/core/models/user.h>
 
@@ -50,5 +51,9 @@ struct AuthorPublicationSummary {
 
 using PublicationSummaries = std::vector<PublicationSummary>;
 using AuthorPublicationSummaries = std::vector<AuthorPublicationSummary>;
+
+using PublicationPage = Page<PublicationRecord>;
+using PublicationSummaryPage = Page<PublicationSummary>;
+using AuthorPublicationSummaryPage = Page<AuthorPublicationSummary>;
 
 } // namespace dgds::core

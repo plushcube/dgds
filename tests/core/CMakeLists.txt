@@ -1,4 +1,4 @@
-dgds_add_test_area(core aead_test.cpp author_signature_test.cpp
+dgds_add_test_area(core aead_test.cpp author_signature_test.cpp binary_test.cpp
                         canonical_form_test.cpp content_identity_test.cpp
                         device_wrap_test.cpp keys_test.cpp
                         mark_channel_test.cpp mark_codec_test.cpp package_test.cpp

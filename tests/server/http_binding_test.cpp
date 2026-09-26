@@ -25,6 +25,7 @@
 #include <atomic>
 #include <cstddef>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <thread>
 #include <unistd.h>
@@ -42,6 +43,7 @@ using dgds::server::CatalogService;
 using dgds::server::DeliveryService;
 using dgds::server::PublicationService;
 using dgds::server::PurchaseService;
+using dgds::server::RateLimit;
 using dgds::server::RateLimiter;
 using dgds::server::SessionStore;
 using dgds::server::UserService;
@@ -67,10 +69,12 @@ std::string long_text() {
 
 class HttpBindingTest : public ::testing::Test {
 protected:
-  HttpBindingTest() : m_root(temporary_root()) { std::filesystem::create_directories(m_root); }
+  explicit HttpBindingTest(RateLimit limit = RateLimit{}) : m_root(temporary_root()), m_limiter(limit) {
+    std::filesystem::create_directories(m_root);
+  }
 
   void SetUp() override {
-    bind(m_server, m_surface);
+    bind(m_server, m_surface, m_limiter, [this]() { return m_now; });
 
     m_port = m_server.bind_to_any_port("127.0.0.1");
     ASSERT_GT(m_port, 0);
@@ -135,6 +139,39 @@ private:
   static inline std::atomic<unsigned> counter{0};
 };
 
+class AddressLimitTest : public HttpBindingTest {
+protected:
+  AddressLimitTest() : HttpBindingTest(RateLimit{.calls = 2, .window = 60}) {}
+};
+
+TEST_F(HttpBindingTest, RejectsRequestBodyBeyondLimit) {
+  const std::string oversized(dgds::core::k_max_request_bytes + 1024, 'x');
+
+  httplib::Client client{"127.0.0.1", m_port};
+  client.set_connection_timeout(5);
+  client.set_write_timeout(5);
+
+  const auto response = client.Post("/register", oversized, "application/json");
+
+  ASSERT_TRUE(response);
+  EXPECT_EQ(response->status, 413) << "тело сверх предела должно отклоняться до разбора содержимого";
+}
+
+TEST_F(AddressLimitTest, RejectsRequestsBeyondAddressLimit) {
+  const auto first = post("/catalog", Json::object());
+  const auto second = post("/catalog", Json::object());
+  const auto third = post("/catalog", Json::object());
+
+  ASSERT_TRUE(first);
+  ASSERT_TRUE(second);
+  ASSERT_TRUE(third);
+
+  EXPECT_EQ(first->status, 200);
+  EXPECT_EQ(second->status, 200);
+  EXPECT_EQ(third->status, 429);
+  EXPECT_EQ(Json::parse(third->body).at("error").at("code").get<std::string>(), "rate_limit_exceeded");
+}
+
 TEST_F(HttpBindingTest, ServesScenarioOverHttp) {
   const auto registered = post("/register", Json{{"name", "автор"}});
   ASSERT_TRUE(registered);
@@ -175,8 +212,12 @@ TEST_F(HttpBindingTest, ServesScenarioOverHttp) {
 
   ASSERT_TRUE(catalog);
   ASSERT_EQ(catalog->status, 200);
-  ASSERT_EQ(Json::parse(catalog->body).at("data").size(), 1U);
-  EXPECT_EQ(Json::parse(catalog->body).at("data").at(0).at("publication_id").get<std::string>(), publication_id);
+  const Json catalog_body = Json::parse(catalog->body).at("data");
+  ASSERT_EQ(catalog_body.at("offset").get<std::string>(), "0");
+  ASSERT_EQ(catalog_body.at("limit").get<std::string>(), std::to_string(dgds::core::k_default_page_size));
+  ASSERT_EQ(catalog_body.at("total").get<std::string>(), "1");
+  ASSERT_EQ(catalog_body.at("items").size(), 1U);
+  EXPECT_EQ(catalog_body.at("items").at(0).at("publication_id").get<std::string>(), publication_id);
 
   const auto duplicate = post("/publish", publication);
   ASSERT_TRUE(duplicate);

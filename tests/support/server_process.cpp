@@ -80,6 +80,8 @@ bool ServerProcess::start(const std::filesystem::path &root) {
       const std::string line{buffer};
       const std::size_t marker = line.find(k_server_listen_marker);
 
+      m_banner += line;
+
       if (marker == std::string::npos) {
         continue;
       }

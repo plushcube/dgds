@@ -64,7 +64,14 @@ CommandLine parse_command_line(int argc, char *argv[]) {
     }
 
     if ((argument == k_root_option || argument == k_master_key_option) && index + 1 < argc) {
-      const std::filesystem::path value = argv[++index];
+      const std::string_view raw = argv[++index];
+
+      if (raw.empty() || raw.starts_with("--")) {
+        command_line.command = Command::invalid;
+        return command_line;
+      }
+
+      const std::filesystem::path value = raw;
 
       if (argument == k_root_option) {
         command_line.configuration.storage_root = value;
@@ -85,7 +92,14 @@ CommandLine parse_command_line(int argc, char *argv[]) {
 
     if ((argument == k_host_option || argument == k_port_option || argument == k_rate_limit_option) &&
         index + 1 < argc) {
-      const std::string value = argv[++index];
+      const std::string_view raw = argv[++index];
+
+      if (raw.empty() || raw.starts_with("--")) {
+        command_line.command = Command::invalid;
+        return command_line;
+      }
+
+      const std::string value{raw};
 
       if (argument == k_host_option) {
         command_line.configuration.host = value;
