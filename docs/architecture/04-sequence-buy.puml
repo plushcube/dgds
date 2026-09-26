@@ -6,8 +6,8 @@ participant "Приложение-хост" as host
 participant "Фасад\n(ApiClient)" as facade
 participant "Ключ устройства\n(DeviceKey)" as device
 participant "Транспорт\n(ApiTransport)" as transport
-participant "HTTPS-поверхность\n(контроллеры)" as surface
-participant "Middleware\nверсия, частота, авторизация" as middleware
+participant "HTTP-привязка\n(httplib, ограничитель частоты)" as http
+participant "HTTPS-поверхность\n(api::Surface)" as surface
 participant "Сценарий покупки" as services
 participant "Ядро\n(dgds-core)" as core
 participant "Адаптеры портов" as adapters
@@ -21,39 +21,51 @@ facade -> device: public_key()
 device --> facade: открытый ключ устройства
 note over device: Приватный ключ устройства не покидает устройство
 facade -> transport: buy(учётные данные, публикация,\nоткрытый ключ устройства)
-transport -> surface: HTTPS: покупка (идентификатор публикации,\nоткрытый ключ устройства, версия протокола)
-surface -> middleware: проверки запроса
-middleware -> middleware: токен → идентификатор покупателя
-middleware -> services: buy(покупатель, публикация,\nоткрытый ключ устройства, момент времени)
+transport -> http: HTTPS: покупка (идентификатор публикации,\nоткрытый ключ устройства, версия протокола)
+http -> http: ограничитель частоты по адресу запроса
+http -> surface: вызов операции покупки
+surface -> surface: проверка версии, разбор полей
+surface -> surface: токен сессии → идентификатор покупателя
+surface -> services: buy(покупатель, публикация,\nоткрытый ключ устройства, момент времени)
 services -> adapters: найти покупку покупателя
 adapters -> metadata: чтение purchases/
 alt покупка уже есть
     metadata --> adapters: PurchaseRecord
     adapters --> services: покупка найдена
     services -> adapters: найти чек для этого устройства
-    adapters -> metadata: receipts/<покупка>-<устройство>
+    adapters -> metadata: receipts/<покупка>-<hex устройства>.receipt
     metadata --> adapters: ReceiptRecord (прежняя обёртка)
     note over services: Новая покупка не создаётся,\nсчётчик продаж не растёт
-else покупка новая
+else покупки нет
     adapters --> services: purchase_not_found
-    services -> core: сгенерировать ключ покупки Kp
-    core --> services: Kp (в памяти)
-    services -> adapters: прочитать ключ файла
-    adapters -> keys: <hex идентичности>.key = E_master(Kf)
-    keys --> adapters: шифротекст
-    adapters --> services: ключ файла (в памяти)
-    services -> core: обёртка E_dev(Kp): X25519 + HKDF,\nAAD: версия, идентификатор покупки, покупатель,\nдата покупки, дата выпуска
-    core --> services: DeviceEnvelope
-    services -> core: обёртка E_Kp(Kf)
-    core --> services: SealedContent
-    services -> adapters: записать покупку
-    adapters -> metadata: purchases/<покупка>.purchase\n(покупатель, публикация, дата)
-    services -> adapters: записать чек
-    adapters -> metadata: receipts/<покупка>-<устройство>.receipt
+    services -> adapters: найти публикацию
+    adapters -> metadata: publications/<публикация>.publication
+    metadata --> adapters: PublicationRecord
+    alt публикация принадлежит самому покупателю
+        services -> adapters: найти чек по публикации и устройству
+        adapters -> metadata: receipts/<публикация>-<hex устройства>.receipt
+        note over services: Запись покупки не создаётся;\nчек ищется и выдаётся под идентификатором публикации
+    else покупка новая
+        services -> core: сгенерировать ключ покупки Kp
+        core --> services: Kp (в памяти)
+        services -> adapters: обёртка ключа файла ключом покупки\n(порт хранилища ключей)
+        adapters -> keys: <hex идентичности>.key = E_master(Kf)
+        keys --> adapters: ключ файла (в памяти)
+        adapters -> core: обёртка Kf ключом покупки
+        core --> adapters: E_Kp(Kf)
+        adapters --> services: E_Kp(Kf)
+        services -> core: обёртка E_dev(Kp): X25519 + HKDF,\nAAD: версия, идентификатор покупки, покупатель,\nдата покупки, дата выпуска
+        core --> services: DeviceEnvelope
+        services -> adapters: записать покупку
+        adapters -> metadata: purchases/<покупка>.purchase\n(покупатель, публикация, дата)\nи pairs/<hex покупателя>-<публикация>.pair
+        note over services, metadata: Параллельная запись той же покупки\nведёт к повторному чтению чека, а не к ошибке
+        services -> adapters: записать чек
+        adapters -> metadata: receipts/<покупка>-<hex устройства>.receipt
+    end
 end
-services --> middleware: Receipt { header, обёртка ключа покупки }
-middleware --> surface: ответ
-surface --> transport: HTTPS: чек
+services --> surface: Receipt { header, обёртка ключа покупки }
+surface --> http: ответ
+http --> transport: HTTPS: чек
 transport --> facade: Receipt
 facade -> facade: сериализация чека
 facade -> receipts: save(идентификатор покупки, непрозрачный блок)

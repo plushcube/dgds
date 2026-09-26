@@ -5,8 +5,8 @@ actor "Пользователь" as user
 participant "Приложение-хост" as host
 participant "Фасад\n(ApiClient)" as facade
 participant "Транспорт\n(ApiTransport)" as transport
-participant "HTTPS-поверхность\n(контроллеры)" as surface
-participant "Middleware" as middleware
+participant "HTTP-привязка\n(httplib, ограничитель частоты)" as http
+participant "HTTPS-поверхность\n(api::Surface)" as surface
 participant "Сценарии" as services
 participant "Ядро\n(dgds-core)" as core
 participant "Адаптеры портов" as adapters
@@ -14,90 +14,138 @@ database "Хранилища" as stores
 
 note over user, host: Отказ приходит значением, а не исключением:\nхосту достаётся код ошибки, а не текст сообщения
 
+group Частота запросов превышена по адресу
+    facade -> transport: любая операция
+    transport -> http: HTTPS
+    http -> http: ограничитель частоты по адресу запроса
+    http --> transport: rate_limit_exceeded (429)
+end
+
+group Частота операций превышена по пользователю
+    facade -> transport: publish / fetch_package
+    transport -> http: HTTPS
+    http -> surface: вызов операции
+    surface -> surface: ограничитель частоты по пользователю
+    surface --> transport: rate_limit_exceeded (429)
+end
+
+group Запрос не разобран или не поддержан
+    transport -> http: HTTPS
+    http -> surface: вызов операции
+    alt версии нет, она нечисловая или чужая
+        surface --> transport: request_malformed / version_unsupported
+    else путь не известен
+        surface --> transport: operation_unknown (404)
+    else поля запроса не разобраны
+        surface --> transport: request_malformed (400)
+    end
+end
+
+group Окно списка задано неверно
+    facade -> transport: catalog / author-publications / purchases
+    transport -> http: HTTPS: смещение, размер окна
+    http -> surface: вызов операции
+    surface -> surface: разбор окна (значения — строки,\nпо умолчанию 20, предел 100)
+    alt значение окна нечисловое, отрицательное или не строка
+        surface --> transport: request_malformed (400)
+    else размер окна больше предела
+        surface --> transport: request_malformed (400)
+    end
+end
+
 group Учётные данные не действуют
     facade -> transport: защищённая операция
-    transport -> surface: HTTPS
-    surface -> middleware: проверка запроса
-    middleware -> middleware: токен не разрешается\nили принадлежит другому пользователю
-    middleware --> surface: authorization_failed
-    surface --> transport: отказ
-    transport --> facade: authorization_failed
+    transport -> http: HTTPS
+    http -> surface: вызов операции
+    surface -> surface: токен сессии не разрешается\nили принадлежит другому пользователю
+    surface --> transport: authorization_failed (401)
 end
 
 group Имя занято или неизвестно
     facade -> transport: register_user(имя)
-    transport -> surface: HTTPS
+    transport -> http: HTTPS
+    http -> surface: вызов операции
     surface -> services: register_user(имя)
     services -> adapters: захватить имя
     adapters -> stores: names/<отпечаток имени>.name
     alt маркер имени уже существует
         adapters --> services: маркер занят
-        services --> surface: user_name_taken
+        services --> surface: user_name_taken (409)
     else регистрация проходит, а входа по имени нет
         services -> adapters: найти пользователя по имени
         adapters --> services: не найден
-        services --> surface: user_not_found
+        services --> surface: user_not_found (404)
     end
-    surface --> transport: отказ
-    transport --> facade: отказ
 end
 
 group Публикация отвергнута
     facade -> transport: publish(черновик, ключ, подпись)
-    transport -> surface: HTTPS
+    transport -> http: HTTPS
+    http -> surface: вызов операции
     surface -> services: publish(...)
-    alt такой контент уже опубликован
-        services -> adapters: захватить идентификатор
-        adapters --> services: already_claimed
-        services --> surface: content_duplicate
+    note over services, adapters: Порядок шагов: автор → канонизация и идентичность\nконтента → подпись → захват идентификатора
+    alt автор не найден
+        services -> adapters: найти автора
+        adapters --> services: не найден
+        services --> surface: user_not_found (404)
     else подпись не сходится
         services -> core: проверка подписи автора
         core --> services: подпись неверна
-        services --> surface: signature_invalid
+        services --> surface: signature_invalid (422)
+    else такой контент уже опубликован
+        services -> adapters: захватить идентификатор контента
+        adapters --> services: already_claimed
+        services --> surface: content_duplicate (409)
     end
-    surface --> transport: отказ
-    transport --> facade: отказ
+    note over services, adapters: На путях отказа захваченный идентификатор\nосвобождается
 end
 
 group Покупка не проходит
     facade -> transport: buy(публикация)
-    transport -> surface: HTTPS
+    transport -> http: HTTPS
+    http -> surface: вызов операции
     surface -> services: buy(...)
+    services -> adapters: найти покупку покупателя
+    adapters --> services: purchase_not_found
     services -> adapters: найти публикацию
     adapters --> services: не найдена
-    services --> surface: publication_not_found
-    surface --> transport: отказ
-    transport --> facade: отказ
+    services --> surface: publication_not_found (404)
 end
 
 group Права на контекст нет
     facade -> transport: context_identity / fetch_package
-    transport -> surface: HTTPS
+    transport -> http: HTTPS
+    http -> surface: вызов операции
     surface -> services: разбор контекста доступа
     services -> adapters: найти покупку, затем публикацию
     alt покупка принадлежит другому пользователю
-        services --> surface: not_permitted
+        services --> surface: not_permitted (403)
     else ни покупки, ни публикации с таким идентификатором
-        services --> surface: purchase_not_found
+        services --> surface: purchase_not_found (404)
     end
-    surface --> transport: отказ
-    transport --> facade: отказ
 end
 
 group Чек на устройстве не разбирается
     facade -> facade: разбор сохранённого чека
     alt блока нет
-        facade --> host: receipt_not_found
-    else блок есть, но повреждён
-        facade --> host: receipt_malformed
+        facade -> transport: restore_receipt(...)
+        transport -> http: HTTPS
+        http -> surface: вызов операции восстановления
+        surface --> transport: receipt_not_found / purchase_not_found
+    else блок есть, но повреждён или его версия не поддержана
+        facade --> host: receipt_malformed / receipt_version_unsupported
     end
 end
 
-group Пакет не относится к запрошенной публикации
+group Пакет не разбирается или не тот
     facade -> transport: fetch_package(...)
     transport --> facade: Package
     facade -> facade: сверка идентичности пакета с ожидаемой
-    facade --> host: content_mismatch
+    alt идентичность не совпадает
+        facade --> host: content_mismatch
+    else версия пакета или алгоритм подписи не поддержаны,\nподпись автора неверна
+        facade --> host: package_version_unsupported /\nalgorithm_unsupported / signature_invalid
+    end
 end
 
 note over surface, stores: Отказ не раскрывает лишнего: чужая покупка\nи отсутствие покупки различаются между собой,\nно ни то, ни другое не выдаёт чужих данных

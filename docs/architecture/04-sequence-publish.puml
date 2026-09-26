@@ -5,8 +5,8 @@ actor "Пользователь (автор)" as user
 participant "Приложение-хост" as host
 participant "Фасад\n(ApiClient)" as facade
 participant "Транспорт\n(ApiTransport)" as transport
-participant "HTTPS-поверхность\n(контроллеры)" as surface
-participant "Middleware\nверсия, частота, авторизация" as middleware
+participant "HTTP-привязка\n(httplib, ограничитель частоты)" as http
+participant "HTTPS-поверхность\n(api::Surface)" as surface
 participant "Сценарий публикации" as services
 participant "Ядро\n(dgds-core)" as core
 participant "Адаптеры портов" as adapters
@@ -24,33 +24,41 @@ note over host: Приватный ключ автора остаётся у а�
 
 host -> facade: publish(учётные данные, черновик,\nоткрытый ключ, подпись)
 facade -> transport: publish(...)
-transport -> surface: HTTPS: черновик (название, имя файла,\nсодержимое), открытый ключ, подпись,\nучётные данные, версия протокола
-surface -> middleware: проверки запроса
-middleware -> middleware: токен → идентификатор автора
-middleware -> services: publish(автор, черновик,\nоткрытый ключ, подпись, момент времени)
+transport -> http: HTTPS: черновик (название, имя файла,\nсодержимое), открытый ключ, подпись,\nучётные данные, версия протокола
+http -> http: ограничитель частоты по адресу запроса
+http -> surface: вызов операции публикации
+surface -> surface: проверка версии, разбор полей
+surface -> surface: токен сессии → идентификатор автора
+surface -> surface: ограничитель частоты по пользователю
+surface -> services: publish(автор, черновик,\nоткрытый ключ, подпись, момент времени)
+services -> adapters: найти автора
+adapters -> metadata: users/<hex идентификатора>.user
+metadata --> adapters: UserAccount (имя автора)
+adapters --> services: автор найден
 services -> core: канонизация и идентичность контента
 core --> services: ContentIdentity
-services -> core: проверка подписи автора
+services -> core: проверка подписи автора\n(идентичность и имя автора)
 core --> services: подпись верна
 services -> adapters: захватить идентификатор контента
 adapters -> identities: атомарный захват <hex идентичности>
 identities --> adapters: захвачено
-note over adapters, identities: Захваченный идентификатор не освобождается;\nповтор публикации того же контента отвергается
-services -> core: шифрование контента ключом файла
-core --> services: E_Kf(контент) со свежим nonce
+note over adapters, identities: Захват снимается при любой последующей ошибке;\nповтор публикации того же контента отвергается
+services -> adapters: зашифровать контент ключом файла\n(порт хранилища ключей)
+adapters -> keys: <hex идентичности>.key = E_master(Kf)\n(новый ключ файла)
+adapters -> core: шифрование контента ключом файла
+core --> adapters: E_Kf(контент) со свежим nonce
+adapters --> services: E_Kf(контент)
 services -> adapters: сохранить блоб
 adapters -> blobs: <hex идентичности>.blob
-services -> adapters: сохранить ключ файла под мастер-ключом
-adapters -> keys: <hex идентичности>.key = E_master(Kf)
 note over services, keys: Ключ файла рождается на сервере\nи наружу не выходит
 services -> adapters: записать публикацию
-adapters -> metadata: publications/<идентификатор>.publication\n(автор, название, имя файла, размер,\nдата, идентичность, открытый ключ, подпись)
-services --> middleware: PublicationRecord
-middleware --> surface: ответ
-surface --> transport: HTTPS: PublicationId
+adapters -> metadata: publications/<идентификатор>.publication\n(автор, имя автора, название, имя файла, размер,\nдата, идентичность, открытый ключ,\nалгоритм подписи, подпись)
+services --> surface: PublicationRecord
+surface --> http: ответ
+http --> transport: HTTPS: PublicationId
 transport --> facade: PublicationId
 facade --> host: PublicationId
 host --> user: публикация принята
 
-note over surface, adapters: Наружу уходит только шифротекст;\nоткрытый текст покидает библиотеку единственным\nпутём — из операции получения контента
+note over surface, adapters: Контент хранится на сервере только шифротекстом;\nв ответах сервера открытый текст не возвращается,\nнаружу уходит лишь идентификатор публикации
 @enduml
