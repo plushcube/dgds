@@ -98,11 +98,18 @@ def start_server(binary, root):
 
 def write_content(path, size):
     line = "строка демонстрационного текста для измерения нагрузки\n"
-    text = ""
-    while len(text.encode()) < size:
-        text += line
+    data = b""
+    while len(data) < size:
+        data += line.encode()
+    data = data[:size]
+    while data:
+        try:
+            data.decode()
+            break
+        except UnicodeDecodeError:
+            data = data[:-1]
 
-    path.write_bytes(text.encode()[:size])
+    path.write_bytes(data)
 
     return path
 
@@ -145,59 +152,73 @@ def seed_example(binary, certificate, port, root, content):
     return result.stdout
 
 
-def synthesize(records, total):
-    existing = sorted(records.glob("*.publication"))
+def synthesize(records, total, suffix, base):
+    existing = sorted(records.glob(f"*.{suffix}"))
     if not existing:
-        raise SystemExit("в стенде нет ни одной записи публикации")
+        raise SystemExit(f"в стенде нет ни одной записи {suffix}")
 
     raw = existing[0].read_bytes()
     present = len(existing)
     for index in range(present, total):
-        identifier = 9000000000000000000 + index
-        (records / f"{identifier}.publication").write_bytes(identifier.to_bytes(8, "big") + raw[8:])
+        identifier = base + index
+        (records / f"{identifier}.{suffix}").write_bytes(identifier.to_bytes(8, "big") + raw[8:])
 
     return len(list(records.iterdir()))
 
 
-def sweep(binary, certificate, port, pid, name, path, body, threads, seconds):
+def sweep(binary, certificate, port, pid, name, path, body, threads, seconds, keep_alive=True):
     before_cpu, before_rss = cpu_seconds(pid), rss_kib(pid)
-    result = subprocess.run([str(binary), "--certificate", str(certificate), "--port", str(port),
-                             "--path", path, "--threads", str(threads), "--seconds", str(seconds),
-                             "--body", body],
-                            capture_output=True, text=True)
+    command = [str(binary), "--certificate", str(certificate), "--port", str(port), "--path", path,
+               "--threads", str(threads), "--seconds", str(seconds), "--body", body]
+    if not keep_alive:
+        command.append("--no-keep-alive")
+    result = subprocess.run(command, capture_output=True, text=True)
     after_cpu, after_rss = cpu_seconds(pid), rss_kib(pid)
 
     line = result.stdout.strip()
     match = re.search(r"RPS (\d+)", line)
     if not match:
-        raise SystemExit("замер не удался: " + line + result.stderr.strip())
+        print(f"{name}: потоков {threads}, замер не дал результата — {line or result.stderr.strip()}")
+
+        return None
 
     rps = int(match.group(1))
-    cores = (after_cpu - before_cpu) / max(seconds, 1)
-    per_request = (after_cpu - before_cpu) / max(rps * seconds, 1) * 1e6
+    elapsed_match = re.search(r"([0-9.]+) с,", line)
+    elapsed = float(elapsed_match.group(1)) if elapsed_match else float(seconds)
+    spent = after_cpu - before_cpu
 
     print(f"{name}: потоков {threads}, {line}")
-    print(f"    процессор сервера {after_cpu - before_cpu:+.2f} с ({cores:.2f} ядра), "
-          f"{per_request:.0f} мкс на запрос, память {after_rss / 1024:.1f} МиБ")
+    if rps == 0:
+        print(f"    процессор сервера {spent:+.2f} с за {elapsed:.1f} с, "
+              f"память {after_rss / 1024:.1f} МиБ")
+    else:
+        print(f"    процессор сервера {spent:+.2f} с ({spent / elapsed:.2f} ядра), "
+              f"{spent / (rps * elapsed) * 1e6:.0f} мкс на запрос, память {after_rss / 1024:.1f} МиБ")
 
     return rps
 
 
-def lists_scenario(args, binaries, root, certificate, port, pid, credentials, author_credentials, publication):
-    records = root / "metadata" / "publications"
-    for total in numbers(args.publications):
-        count = synthesize(records, total)
-        for threads in numbers(args.threads):
-            sweep(binaries / "dgds-loadgen", certificate, port, pid, f"каталог, публикаций {count}",
-                  "/catalog", '{"version":1,"offset":"0","limit":"20"}', threads, args.seconds)
+def lists_scenario(args, binaries, root, certificate, port, pid, credentials, author_credentials):
+    publications = root / "metadata" / "publications"
+    purchases = root / "metadata" / "purchases"
+    catalog_body = '{"version":1,"offset":"0","limit":"20"}'
+    purchases_body = json.dumps({"version": 1, "credentials": credentials["data"], "offset": "0", "limit": "20"})
+    author_body = json.dumps({"version": 1, "credentials": author_credentials["data"], "offset": "0", "limit": "20"})
 
-    for threads in numbers(args.threads):
-        sweep(binaries / "dgds-loadgen", certificate, port, pid, "список покупок",
-              "/purchases", json.dumps({"version": 1, "credentials": credentials["data"],
-                                        "offset": "0", "limit": "20"}), threads, args.seconds)
-        sweep(binaries / "dgds-loadgen", certificate, port, pid, "список публикаций автора",
-              "/author-publications", json.dumps({"version": 1, "credentials": author_credentials["data"],
-                                                  "offset": "0", "limit": "20"}), threads, args.seconds)
+    for total in numbers(args.publications):
+        publication_count = synthesize(publications, total, "publication", 9000000000000000000)
+        purchase_count = synthesize(purchases, total, "purchase", 8000000000000000000)
+        for threads in numbers(args.threads):
+            sweep(binaries / "dgds-loadgen", certificate, port, pid,
+                  f"каталог, публикаций {publication_count}", "/catalog", catalog_body, threads, args.seconds)
+            sweep(binaries / "dgds-loadgen", certificate, port, pid,
+                  f"список покупок, покупок {purchase_count}", "/purchases", purchases_body, threads, args.seconds)
+            sweep(binaries / "dgds-loadgen", certificate, port, pid,
+                  f"список публикаций автора, публикаций {publication_count}", "/author-publications",
+                  author_body, threads, args.seconds)
+
+    sweep(binaries / "dgds-loadgen", certificate, port, pid, "каталог без переиспользования соединений",
+          "/catalog", catalog_body, numbers(args.threads)[0], args.seconds, keep_alive=False)
 
 
 def delivery_scenario(args, binaries, root, certificate, port, pid, credentials, device):
@@ -238,8 +259,7 @@ def main():
         credentials["purchase"] = find_value(purchases, "purchase_id")
 
         if args.scenario in ("lists", "all"):
-            lists_scenario(args, binaries, root, certificate, port, process.pid, credentials,
-                           author_credentials, publication)
+            lists_scenario(args, binaries, root, certificate, port, process.pid, credentials, author_credentials)
         if args.scenario in ("delivery", "all"):
             delivery_scenario(args, binaries, root, certificate, port, process.pid, credentials, device)
     finally:
