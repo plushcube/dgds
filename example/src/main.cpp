@@ -278,7 +278,7 @@ int main(int argc, char *argv[]) {
 
   std::cout << "Публикация  " << publication.value() << " «" << k_title << "» автором «" << k_author << "»\n";
 
-  const auto catalog = client.catalog();
+  const auto catalog = client.catalog(0, dgds::core::k_default_page_size);
 
   if (!catalog.has_value()) {
     return report("просмотр каталога", catalog.error());

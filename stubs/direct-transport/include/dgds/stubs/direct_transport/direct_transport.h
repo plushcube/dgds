@@ -11,6 +11,7 @@
 #include <dgds/core/models/timestamp.h>
 #include <dgds/core/models/user.h>
 
+#include <cstddef>
 #include <functional>
 #include <utility>
 
@@ -47,7 +48,7 @@ public:
 
   [[nodiscard]] Result<Credentials> log_in(Content name) override { return m_users.log_in(name); }
 
-  [[nodiscard]] Result<PublicationSummaries> catalog() override { return m_catalog.catalog(); }
+  [[nodiscard]] Result<PublicationSummaries> catalog(std::size_t, std::size_t) override { return m_catalog.catalog(); }
 
   [[nodiscard]] Result<PublicationId> publish(const Credentials &credentials, const PublicationDraft &draft,
                                               const AuthorPublicKey &author_key, const Signature &signature) override;
@@ -55,7 +56,7 @@ public:
   [[nodiscard]] Result<Receipt> buy(const Credentials &credentials, const PublicationId &publication_id,
                                     const DevicePublicKey &device_key) override;
 
-  [[nodiscard]] Result<PurchaseSummaries> purchases(const Credentials &credentials) override;
+  [[nodiscard]] Result<PurchaseSummaries> purchases(const Credentials &credentials, std::size_t, std::size_t) override;
 
   [[nodiscard]] Result<Receipt> restore_receipt(const Credentials &credentials, const PurchaseId &purchase_id,
                                                 const DevicePublicKey &device_key) override;

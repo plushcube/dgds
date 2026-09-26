@@ -11,6 +11,8 @@ namespace dgds::core {
 
 inline constexpr std::uint8_t k_protocol_version = 1;
 
+inline constexpr std::size_t k_default_page_size = 20;
+
 inline constexpr std::size_t k_max_content_bytes = 4 * 1024 * 1024;
 inline constexpr std::size_t k_max_request_bytes = k_max_content_bytes + 4096;
 inline constexpr std::size_t k_max_response_bytes = 8 * k_max_content_bytes + 64 * 1024;

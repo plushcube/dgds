@@ -39,15 +39,19 @@ public:
 
   [[nodiscard]] Result<Credentials> log_in(Content name) { return m_transport.log_in(name); }
 
-  [[nodiscard]] Result<PublicationSummaries> catalog() { return m_transport.catalog(); }
+  [[nodiscard]] Result<PublicationSummaries> catalog(std::size_t offset = 0,
+                                                     std::size_t limit = core::k_default_page_size) {
+    return m_transport.catalog(offset, limit);
+  }
 
   [[nodiscard]] Result<PublicationId> publish(const Credentials &credentials, const PublicationDraft &draft,
                                               const AuthorPublicKey &author_key, const Signature &signature) {
     return m_transport.publish(credentials, draft, author_key, signature);
   }
 
-  [[nodiscard]] Result<PurchaseSummaries> purchases(const Credentials &credentials) {
-    return m_transport.purchases(credentials);
+  [[nodiscard]] Result<PurchaseSummaries> purchases(const Credentials &credentials, std::size_t offset = 0,
+                                                    std::size_t limit = core::k_default_page_size) {
+    return m_transport.purchases(credentials, offset, limit);
   }
 
   [[nodiscard]] Result<Receipt> buy(const Credentials &credentials, const PublicationId &publication_id);

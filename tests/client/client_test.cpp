@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <string>
 
 namespace {
@@ -129,7 +130,9 @@ public:
 
   Result<Credentials> log_in(Content name) override { return m_inner.log_in(name); }
 
-  Result<PublicationSummaries> catalog() override { return m_inner.catalog(); }
+  Result<PublicationSummaries> catalog(std::size_t offset, std::size_t limit) override {
+    return m_inner.catalog(offset, limit);
+  }
 
   Result<PublicationId> publish(const Credentials &credentials, const PublicationDraft &draft,
                                 const AuthorPublicKey &author_key, const Signature &signature) override {
@@ -141,8 +144,8 @@ public:
     return m_inner.buy(credentials, publication_id, device_key);
   }
 
-  Result<PurchaseSummaries> purchases(const Credentials &credentials) override {
-    return m_inner.purchases(credentials);
+  Result<PurchaseSummaries> purchases(const Credentials &credentials, std::size_t offset, std::size_t limit) override {
+    return m_inner.purchases(credentials, offset, limit);
   }
 
   Result<Receipt> restore_receipt(const Credentials &credentials, const PurchaseId &purchase_id,

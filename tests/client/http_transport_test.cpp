@@ -1,6 +1,7 @@
 #include <http_client_fixture.h>
 
 #include <dgds/core/identity/canonical_form.h>
+#include <dgds/core/models/protocol.h>
 
 #include <httplib.h>
 
@@ -194,7 +195,7 @@ TEST_F(HttpClientFixture, RefusesUnsupportedProtocolVersion) {
   ASSERT_TRUE(trust.has_value());
 
   HttpTransport transport{Endpoint{.host = "127.0.0.1", .port = peer.port()}, trust.value()};
-  const auto summaries = transport.catalog();
+  const auto summaries = transport.catalog(0, dgds::core::k_default_page_size);
 
   ASSERT_FALSE(summaries.has_value());
   EXPECT_EQ(summaries.error(), CoreError::protocol_version_unsupported);

@@ -453,8 +453,9 @@ Result<Credentials> HttpTransport::log_in(Content name) {
   return credentials_of(data.value());
 }
 
-Result<PublicationSummaries> HttpTransport::catalog() {
-  const auto data = exchange(m_endpoint, m_trust, "/catalog", Json::object());
+Result<PublicationSummaries> HttpTransport::catalog(std::size_t offset, std::size_t limit) {
+  const Json body{{"offset", std::to_string(offset)}, {"limit", std::to_string(limit)}};
+  const auto data = exchange(m_endpoint, m_trust, "/catalog", body);
 
   if (!data.has_value()) {
     return std::unexpected(data.error());
@@ -498,8 +499,12 @@ Result<Receipt> HttpTransport::buy(const Credentials &credentials, const Publica
   return receipt_of(data.value());
 }
 
-Result<PurchaseSummaries> HttpTransport::purchases(const Credentials &credentials) {
-  const auto data = exchange(m_endpoint, m_trust, "/purchases", Json{{"credentials", credentials_json(credentials)}});
+Result<PurchaseSummaries> HttpTransport::purchases(const Credentials &credentials, std::size_t offset,
+                                                   std::size_t limit) {
+  const Json body{{"credentials", credentials_json(credentials)},
+                  {"offset", std::to_string(offset)},
+                  {"limit", std::to_string(limit)}};
+  const auto data = exchange(m_endpoint, m_trust, "/purchases", body);
 
   if (!data.has_value()) {
     return std::unexpected(data.error());

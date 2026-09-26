@@ -5,6 +5,7 @@
 #include <dgds/core/models/device.h>
 #include <dgds/core/models/envelope.h>
 #include <dgds/core/models/errors.h>
+#include <dgds/core/models/protocol.h>
 #include <dgds/core/models/publication.h>
 #include <dgds/core/models/purchase.h>
 #include <dgds/core/models/user.h>
@@ -40,13 +41,15 @@ public:
 
   [[nodiscard]] virtual Result<UserAccount> register_user(Content name) = 0;
   [[nodiscard]] virtual Result<Credentials> log_in(Content name) = 0;
-  [[nodiscard]] virtual Result<PublicationSummaries> catalog() = 0;
+  [[nodiscard]] virtual Result<PublicationSummaries> catalog(std::size_t offset = 0,
+                                                             std::size_t limit = core::k_default_page_size) = 0;
   [[nodiscard]] virtual Result<PublicationId> publish(const Credentials &credentials, const PublicationDraft &draft,
                                                       const AuthorPublicKey &author_key,
                                                       const Signature &signature) = 0;
   [[nodiscard]] virtual Result<Receipt> buy(const Credentials &credentials, const PublicationId &publication_id,
                                             const DevicePublicKey &device_key) = 0;
-  [[nodiscard]] virtual Result<PurchaseSummaries> purchases(const Credentials &credentials) = 0;
+  [[nodiscard]] virtual Result<PurchaseSummaries> purchases(const Credentials &credentials, std::size_t offset = 0,
+                                                            std::size_t limit = core::k_default_page_size) = 0;
   [[nodiscard]] virtual Result<Receipt> restore_receipt(const Credentials &credentials, const PurchaseId &purchase_id,
                                                         const DevicePublicKey &device_key) = 0;
   [[nodiscard]] virtual Result<ContentIdentity> context_identity(const Credentials &credentials,

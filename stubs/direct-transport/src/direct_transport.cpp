@@ -46,7 +46,7 @@ Result<Receipt> DirectTransport::buy(const Credentials &credentials, const Publi
   return m_purchases.buy(user_id.value(), publication_id, device_key, m_clock());
 }
 
-Result<PurchaseSummaries> DirectTransport::purchases(const Credentials &credentials) {
+Result<PurchaseSummaries> DirectTransport::purchases(const Credentials &credentials, std::size_t, std::size_t) {
   const auto user_id = authorized(credentials);
 
   if (!user_id.has_value()) {
