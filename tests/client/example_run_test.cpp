@@ -80,7 +80,7 @@ protected:
   // Клиент запускается с рабочим каталогом устройства: тогда проверка отсутствия
   // открытого текста покрывает и всё, что клиент мог бы оставить в текущем каталоге
   [[nodiscard]] RunResult run(std::string_view arguments) const {
-    const std::string command = "cd '" + device().string() + "' && '" + std::string(DGDS_EXAMPLE_PATH) +
+    const std::string command = "cd '" + device().string() + "' && '" + std::string(DGDS_CLIENT_PATH) +
                                 "' --certificate '" + m_server.certificate().string() + "' --port " +
                                 std::to_string(m_server.port()) + " --device '" + device().string() + "' " +
                                 std::string(arguments) + " 2>&1";

@@ -13,7 +13,8 @@ project("DGDS" VERSION 0.0.${PATCH_VERSION})
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/bin")
 
-set(TASK_CLI "dgds")
+set(CLIENT_APP "dgds-client")
+set(SERVER_APP "dgds-server")
 
 option(WITH_TESTS "Whether to build tests" ON)
 
@@ -37,20 +38,11 @@ else()
 endif()
 
 add_subdirectory(libs)
-add_subdirectory(stubs)
 add_subdirectory(src)
-add_subdirectory(example)
 add_subdirectory(tools)
 
-install(TARGETS ${TASK_CLI} RUNTIME DESTINATION bin)
-
-set(CPACK_GENERATOR DEB)
-set(CPACK_PACKAGE_NAME ${TASK_CLI})
-set(CPACK_PACKAGE_VERSION_MAJOR "${PROJECT_VERSION_MAJOR}")
-set(CPACK_PACKAGE_VERSION_MINOR "${PROJECT_VERSION_MINOR}")
-set(CPACK_PACKAGE_VERSION_PATCH "${PROJECT_VERSION_PATCH}")
-set(CPACK_PACKAGE_CONTACT "https://t.me/plushcube")
-include(CPack)
+install(TARGETS ${CLIENT_APP} RUNTIME DESTINATION bin)
+install(TARGETS ${SERVER_APP} RUNTIME DESTINATION bin)
 
 if(WITH_TESTS)
   add_subdirectory(tests)

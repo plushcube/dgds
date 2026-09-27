@@ -134,8 +134,8 @@
 Стенд состоит из двух процессов: сервер и клиент-пример.
 
 ```sh
-.build/bin/dgds --root /tmp/dgds-stand --port 0
-.build/bin/dgds-example --certificate /tmp/dgds-stand/tls/server.crt --port <порт из строки «Слушаю»> --device /tmp/dgds-stand/device
+.build/bin/dgds-server --root /tmp/dgds-stand --port 0
+.build/bin/dgds-client --certificate /tmp/dgds-stand/tls/server.crt --port <порт из строки «Слушаю»> --device /tmp/dgds-stand/device
 ```
 
 Сервер печатает адрес и отпечаток сертификата; клиент этому сертификату доверяет и закрепляет его ключ. Клиент регистрирует автора и покупателя, публикует файл, печатает каталог, покупает и выводит расшифрованное содержимое: в выводе видны вставленные метки, а каноническая форма выведенного текста совпадает с исходной. Открытого текста ни в каталоге сервера, ни на устройстве после этого не остаётся.
