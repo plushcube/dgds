@@ -26,8 +26,7 @@ target_include_directories(
 
 target_link_libraries(
   ${SERVER_LIB}
-  PUBLIC dgds::core
-  PUBLIC httplib::httplib
+  PUBLIC dgds::core httplib::httplib
   PRIVATE dgds::warnings nlohmann_json::nlohmann_json
 )
 
