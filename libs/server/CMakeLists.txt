@@ -1,6 +1,7 @@
 set(SERVER_LIB "dgdssrv")
 
-add_library(${SERVER_LIB} STATIC
+add_library(
+  ${SERVER_LIB} STATIC
   "src/api/codec.cpp"
   "src/api/errors.cpp"
   "src/api/response.cpp"
@@ -19,11 +20,12 @@ add_library(${SERVER_LIB} STATIC
 )
 add_library(dgds::server ALIAS ${SERVER_LIB})
 
-target_include_directories(${SERVER_LIB}
-  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+target_include_directories(
+  ${SERVER_LIB} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-target_link_libraries(${SERVER_LIB}
+target_link_libraries(
+  ${SERVER_LIB}
   PUBLIC dgds::core
   PUBLIC httplib::httplib
   PRIVATE dgds::warnings nlohmann_json::nlohmann_json

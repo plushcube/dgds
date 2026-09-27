@@ -19,6 +19,17 @@ jobs:
       - name: Check layers
         run: ./check_layers.sh
 
+      - name: Install cmake-format
+        run: |
+          python3 -m venv "$RUNNER_TEMP/cmake-format-venv"
+          "$RUNNER_TEMP/cmake-format-venv/bin/pip" install cmakelang pyyaml
+          echo "$RUNNER_TEMP/cmake-format-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Check cmake format
+        run: |
+          files=$(find . -name CMakeLists.txt -o -name '*.cmake' | grep -v '^./.build' | sort)
+          echo "$files" | xargs cmake-format --check
+
       - name: Install dependencies
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then

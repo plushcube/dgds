@@ -8,8 +8,7 @@ function(dgds_add_test_area area)
   set(target "dgds-test-${area}")
 
   add_executable(${target} ${ARGN})
-  target_link_libraries(${target} PRIVATE GTest::gtest_main dgds::warnings
-                                             dgds::test-support)
+  target_link_libraries(${target} PRIVATE GTest::gtest_main dgds::warnings dgds::test-support)
 
   gtest_discover_tests(${target})
 endfunction()

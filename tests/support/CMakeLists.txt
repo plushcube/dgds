@@ -1,8 +1,7 @@
 add_library(dgds-test-support STATIC "server_process.cpp")
 add_library(dgds::test-support ALIAS dgds-test-support)
 
-target_include_directories(
-  dgds-test-support PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+target_include_directories(dgds-test-support PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
 target_link_libraries(dgds-test-support PUBLIC GTest::gtest)
 
 # Живые тесты поднимают настоящий сервер: путь к нему подставляется сборкой

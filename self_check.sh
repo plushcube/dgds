@@ -8,9 +8,21 @@ if ! command -v clang-format >/dev/null; then
     exit 1
 fi
 
-sources=$(find libs stubs src example tests -type f \( -name '*.h' -o -name '*.cpp' \) 2>/dev/null)
+sources=$(find libs src tests tools -type f \( -name '*.h' -o -name '*.cpp' \) 2>/dev/null)
 if [ -n "$sources" ] && ! echo "$sources" | xargs clang-format --dry-run --Werror; then
     echo "❌ Formatting check failed."
+    exit 1
+fi
+
+echo "  Checking cmake format..."
+if ! command -v cmake-format >/dev/null; then
+    echo "❌ cmake-format not found."
+    exit 1
+fi
+
+cmake_files=$(find . -name CMakeLists.txt -o -name '*.cmake' | grep -v '^./.build' | grep -v '^./.git/' | sort)
+if [ -n "$cmake_files" ] && ! echo "$cmake_files" | xargs cmake-format --check; then
+    echo "❌ CMake formatting check failed."
     exit 1
 fi
 
