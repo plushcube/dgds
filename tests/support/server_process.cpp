@@ -1,20 +1,38 @@
 #include "server_process.h"
 
 #include <atomic>
+#include <chrono>
 #include <csignal>
-#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <poll.h>
 #include <string>
 #include <sys/wait.h>
 #include <system_error>
+#include <thread>
 #include <unistd.h>
 
 namespace dgds::test {
 namespace {
 
 std::atomic<unsigned> root_counter{0};
+
+// Ожидание завершения потомка с дедлайном: true — процесс завершился (или его уже нет).
+bool wait_for_child(pid_t child, int timeout_ms, int &status) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{timeout_ms};
+
+  while (std::chrono::steady_clock::now() < deadline) {
+    const pid_t reaped = waitpid(child, &status, WNOHANG);
+
+    if (reaped == child || reaped < 0) {
+      return true;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds{10});
+  }
+
+  return false;
+}
 
 } // namespace
 
@@ -62,43 +80,65 @@ bool ServerProcess::start(const std::filesystem::path &root) {
   m_child = child;
   m_root = root;
   m_port = 0;
+  m_banner.clear();
 
-  FILE *output = fdopen(pipes[0], "r");
+  const bool announced = read_banner(pipes[0]);
+  close(pipes[0]);
 
-  if (output == nullptr) {
-    stop();
-    return false;
-  }
-
-  pollfd readable{.fd = pipes[0], .events = POLLIN, .revents = 0};
-  const bool announced = poll(&readable, 1, k_server_start_timeout_ms) > 0;
-
-  char buffer[512] = {};
-
-  if (announced) {
-    while (fgets(buffer, sizeof(buffer), output) != nullptr) {
-      const std::string line{buffer};
-      const std::size_t marker = line.find(k_server_listen_marker);
-
-      m_banner += line;
-
-      if (marker == std::string::npos) {
-        continue;
-      }
-
-      m_port = std::atoi(line.substr(marker + k_server_listen_marker.size()).c_str());
-      break;
-    }
-  }
-
-  fclose(output);
-
-  if (m_port <= 0) {
+  if (!announced) {
     stop();
     return false;
   }
 
   return true;
+}
+
+// Баннер читается с общим дедлайном: сервер может замолчать на середине вывода, и тогда
+// ожидание адреса обязано закончиться неудачей, а не остановить весь тест.
+bool ServerProcess::read_banner(int fd) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{k_server_start_timeout_ms};
+
+  while (true) {
+    const auto left =
+        std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+
+    if (left <= 0) {
+      return false;
+    }
+
+    pollfd readable{.fd = fd, .events = POLLIN, .revents = 0};
+
+    if (poll(&readable, 1, static_cast<int>(left)) <= 0) {
+      return false;
+    }
+
+    char chunk[512] = {};
+    const ssize_t count = read(fd, chunk, sizeof(chunk));
+
+    if (count <= 0) {
+      return false;
+    }
+
+    m_banner.append(chunk, static_cast<std::size_t>(count));
+
+    const std::size_t marker = m_banner.find(k_server_listen_marker);
+
+    if (marker == std::string::npos) {
+      continue;
+    }
+
+    const std::size_t digits = marker + k_server_listen_marker.size();
+
+    // Порт разбирается только из дописанной строки: иначе часть цифр может остаться в
+    // следующем чтении, и в порт попадёт обрезанное число.
+    if (m_banner.find('\n', digits) == std::string::npos) {
+      continue;
+    }
+
+    m_port = std::atoi(m_banner.c_str() + digits);
+
+    return m_port > 0;
+  }
 }
 
 void ServerProcess::stop() {
@@ -109,7 +149,15 @@ void ServerProcess::stop() {
   kill(m_child, SIGTERM);
 
   int status = 0;
-  waitpid(m_child, &status, 0);
+
+  // Потомок может не отреагировать на вежливый сигнал (например, застряв в рантайме
+  // санитайзера), поэтому ожидание ограничено, а после дедлайна идёт безусловный сигнал.
+  if (!wait_for_child(m_child, k_server_stop_timeout_ms, status)) {
+    kill(m_child, SIGKILL);
+    // Если и после безусловного сигнала потомок не исчез, уборка не ждёт его дальше:
+    // тест не должен удерживаться чужим зависанием.
+    wait_for_child(m_child, k_server_stop_timeout_ms, status);
+  }
 
   m_child = -1;
   m_port = 0;
