@@ -1,6 +1,6 @@
 .git
 .build
-.build-tsan
+.build-*
 build
 build-*
 .cache

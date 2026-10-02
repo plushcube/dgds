@@ -3,12 +3,9 @@ name: "C++ CI"
 on: [push, pull_request]
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  checks:
+    name: Формат и целостность
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -19,16 +16,33 @@ jobs:
       - name: Check layers
         run: ./check_layers.sh
 
-      - name: Install cmake-format
-        run: |
-          python3 -m venv "$RUNNER_TEMP/cmake-format-venv"
-          "$RUNNER_TEMP/cmake-format-venv/bin/pip" install cmakelang pyyaml
-          echo "$RUNNER_TEMP/cmake-format-venv/bin" >> "$GITHUB_PATH"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: Check cmake format
+      - name: Install formatters
+        run: pip install clang-format==23.1.2 cmakelang pyyaml
+
+      - name: Check C++ format
         run: |
-          files=$(find . -name CMakeLists.txt -o -name '*.cmake' | grep -v '^./.build' | sort)
-          echo "$files" | xargs cmake-format --check
+          find libs src tests tools -type f \( -name '*.h' -o -name '*.cpp' \) -print0 \
+            | xargs -0 -r clang-format --dry-run --Werror
+
+      - name: Check CMake format
+        run: |
+          find . -name CMakeLists.txt -o -name '*.cmake' | grep -v '^./.build' | sort | xargs -r cmake-format --check
+
+  build:
+    name: Сборка и тесты (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
@@ -44,7 +58,7 @@ jobs:
           if [ "$RUNNER_OS" = "Linux" ]; then
             export LANG=C.UTF-8 LC_ALL=C.UTF-8
           fi
-          cmake -B .build -DPATCH_VERSION=${{ github.run_number }} -DWITH_TESTS=ON
+          cmake -B .build -DCMAKE_BUILD_TYPE=Release -DPATCH_VERSION=${{ github.run_number }} -DWITH_TESTS=ON
 
       - name: Build
         run: cmake --build .build --parallel
@@ -52,6 +66,47 @@ jobs:
       - name: Test
         run: ctest --test-dir .build --output-on-failure
 
+      - name: Package
+        run: |
+          cmake --build .build --target package
+          find .build -maxdepth 1 \( -name '*.deb' -o -name '*.tar.gz' -o -name '*.sha256' \) -print
+          test -n "$(find .build -maxdepth 1 -name '*.tar.gz' -print -quit)"
+          test -n "$(find .build -maxdepth 1 -name '*.sha256' -print -quit)"
+
       - name: Build server image
         if: runner.os == 'Linux'
         run: docker build --tag dgds:local --build-arg PATCH_VERSION=${{ github.run_number }} .
+
+  sanitizers:
+    name: Санитайзеры (${{ matrix.sanitizer }})
+    # Санитайзеры проверяются на Linux: там LeakSanitizer работает вместе с ASan,
+    # а сборка совпадает с той, что уходит проверяющему в пакете.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: ["address,undefined", "thread"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev
+
+      - name: Configure CMake
+        run: |
+          export LANG=C.UTF-8 LC_ALL=C.UTF-8
+          cmake -B .build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DDGDS_SANITIZER=${{ matrix.sanitizer }} -DWITH_TESTS=ON
+
+      - name: Build
+        run: cmake --build .build --parallel
+
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: ctest --test-dir .build --output-on-failure
