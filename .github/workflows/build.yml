@@ -58,7 +58,8 @@ jobs:
           if [ "$RUNNER_OS" = "Linux" ]; then
             export LANG=C.UTF-8 LC_ALL=C.UTF-8
           fi
-          cmake -B .build -DCMAKE_BUILD_TYPE=Release -DPATCH_VERSION=${{ github.run_number }} -DWITH_TESTS=ON
+          cmake -B .build -DCMAKE_BUILD_TYPE=Release -DPATCH_VERSION=${{ github.run_number }} \
+            -DWITH_TESTS=ON -DDGDS_TEST_TIMEOUT_SECONDS=10
 
       - name: Build
         run: cmake --build .build --parallel
@@ -99,14 +100,154 @@ jobs:
         run: |
           export LANG=C.UTF-8 LC_ALL=C.UTF-8
           cmake -B .build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DDGDS_SANITIZER=${{ matrix.sanitizer }} -DWITH_TESTS=ON
+            -DDGDS_SANITIZER=${{ matrix.sanitizer }} -DWITH_TESTS=ON -DDGDS_TEST_TIMEOUT_SECONDS=10
 
       - name: Build
         run: cmake --build .build --parallel
+
+      - name: Give ThreadSanitizer a free address space
+        if: matrix.sanitizer == 'thread'
+        # Известный сбой TSan на Ubuntu 24.04: при высокой энтропии ASLR теневая память
+        # может не отобразиться. Ключ ядра, а не окружение, поэтому sysctl.
+        run: sudo sysctl -w vm.mmap_rnd_bits=28 || echo "vm.mmap_rnd_bits недоступен, продолжаю"
+
+      - name: Smoke the instrumented server
+        if: matrix.sanitizer == 'thread'
+        # Проверка до набора тестов: она отвечает на вопрос, обслуживает ли сервер под
+        # санитайзером вообще, за секунды — вместо вывода «тест начался и замолчал».
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: |
+          root="$(mktemp -d)"
+          .build/bin/dgds-server --root "$root" --port 0 >"$root/banner.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+
+          port=""
+          for _ in $(seq 100); do
+            port="$(grep -oE 'https://127\.0\.0\.1:[0-9]+' "$root/banner.log" | head -1 | cut -d: -f3 || true)"
+            if [ -n "$port" ]; then
+              break
+            fi
+            sleep 0.2
+          done
+
+          if [ -z "$port" ]; then
+            echo "Сервер под санитайзером не объявил адрес за 20 секунд:" >&2
+            cat "$root/banner.log" >&2
+            exit 1
+          fi
+
+          answer="$(curl --silent --show-error --max-time 30 --cacert "$root/tls/server.crt" \
+            --header 'Content-Type: application/json' --data '{"version":1}' \
+            "https://127.0.0.1:$port/catalog")"
+          echo "$answer"
+
+          case "$answer" in
+            *'"version":1'*) echo "Сервер под санитайзером ответил на порту $port" ;;
+            *)
+              echo "Неожиданный ответ сервера" >&2
+              exit 1
+              ;;
+          esac
+
+      # Временные шаги: снимают состояние зависшего процесса и проверяют ту же сборку
+      # другим компилятором. Удалить после починки.
+      - name: Диагностика зависания под TSan
+        if: matrix.sanitizer == 'thread'
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: |
+          set +e
+          set -x
+          command -v gdb >/dev/null || sudo apt-get install -y gdb
+          gdb --version | head -1 || true
+          sudo sysctl -w kernel.yama.ptrace_scope=0 || true
+
+          dump_alive() {
+            pid="$1"
+            echo "--- тест жив спустя 25 секунд ---"
+            grep -E "^(State|Threads)" "/proc/$pid/status" || true
+            ps -eo pid,ppid,stat,wchan:25,etime,cmd --forest | grep -E "dgds|PID" || true
+            for task in /proc/"$pid"/task/*; do
+              echo "--- ядро, поток ${task##*/}: $(cat "$task/wchan" 2>/dev/null) ---"
+              sudo cat "$task/stack" 2>/dev/null | head -6
+            done
+            echo "--- стеки теста ---"
+            sudo gdb -p "$pid" -batch -ex "set pagination off" -ex "info threads" \
+              -ex "thread apply all bt" 2>&1 | tail -120
+            for child in $(pgrep -P "$pid" || true); do
+              echo "--- стеки потомка $child ---"
+              sudo gdb -p "$child" -batch -ex "set pagination off" \
+                -ex "thread apply all bt" 2>&1 | tail -60
+            done
+            echo "--- сокеты ---"
+            ss -tnp || true
+            kill -9 "$pid" || true
+          }
+
+          echo "::group:: Зависающий тест"
+          .build/bin/dgds-test-server \
+            --gtest_filter=LiveServerTest.AnswersOverTlsWithVerifiedCertificate >/tmp/hang.out 2>&1 &
+          test_pid=$!
+          sleep 25
+          if kill -0 "$test_pid" 2>/dev/null; then
+            dump_alive "$test_pid"
+          else
+            echo "--- тест завершился сам за 25 секунд ---"
+          fi
+          wait "$test_pid" 2>/dev/null
+          echo "--- вывод теста ---"
+          cat /tmp/hang.out
+          echo "::endgroup::"
+
+          echo "::group:: Падающий тест под отладчиком"
+          sudo gdb -batch -ex "set pagination off" -ex run -ex "thread apply all bt" \
+            --args .build/bin/dgds-test-server --gtest_filter=HttpBindingTest.ServesScenarioOverHttp 2>&1 | tail -100
+          echo "::endgroup::"
+
+          echo "::group:: Тот же тест без ASLR"
+          timeout 60 setarch "$(uname -m)" -R .build/bin/dgds-test-server \
+            --gtest_filter=LiveServerTest.AnswersOverTlsWithVerifiedCertificate
+          echo "--- код возврата без ASLR: $? (124 — зависание) ---"
+          echo "::endgroup::"
+
+      - name: Диагностика TSan сборкой clang
+        if: matrix.sanitizer == 'thread'
+        continue-on-error: true
+        timeout-minutes: 20
+        run: |
+          set +e
+          set -x
+          # Сравнение с LLVM-рантаймом: он эталонный для санитайзеров, и если та же
+          # сборка проходит под ним, дело в libtsan от GCC, а не в коде.
+          command -v clang || { sudo apt-get update && sudo apt-get install -y clang; }
+          clang --version || true
+          echo "::group:: конфигурация clang-сборки"
+          cmake -B .build-tsan-clang -DCMAKE_BUILD_TYPE=RelWithDebInfo -DDGDS_SANITIZER=thread \
+            -DWITH_TESTS=ON -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DDGDS_TEST_TIMEOUT_SECONDS=10
+          echo "код возврата конфигурации: $?"
+          echo "::endgroup::"
+          echo "::group:: сборка clang-сборки"
+          cmake --build .build-tsan-clang --parallel --target dgds-test-server
+          echo "код возврата сборки: $?"
+          echo "::endgroup::"
+          for filter in LiveServerTest.AnswersOverTlsWithVerifiedCertificate HttpBindingTest.ServesScenarioOverHttp; do
+            echo "::group:: clang: $filter"
+            TSAN_OPTIONS=halt_on_error=1 timeout 120 .build-tsan-clang/bin/dgds-test-server \
+              --gtest_filter="$filter"
+            echo "--- код возврата: $? (0 — прошло, 124 — зависание) ---"
+            echo "::endgroup::"
+          done
 
       - name: Test
         env:
           ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        # Предел времени теста задан настройкой конфигурации (-DDGDS_TEST_TIMEOUT_SECONDS),
+        # потому что свойство TIMEOUT теста перекрывает флаг --timeout этой команды.
         run: ctest --test-dir .build --output-on-failure

@@ -62,6 +62,16 @@ if(MSVC)
   target_compile_options(dgds-warnings INTERFACE /W4)
 else()
   target_compile_options(dgds-warnings INTERFACE -Wall -Wextra -pedantic -Werror)
+
+  # GCC 13 в оптимизированной сборке объявляет неинициализированным поле объединения внутри <regex>
+  # (regex_automaton.h:246): поле принадлежит другой операции автомата и в этой ветке не читается.
+  # Подключённый httplib.h тянет <regex> и его разбор в каждый свой TU, поэтому предупреждение,
+  # находясь в системном заголовке, приходит в наш код и роняет сборку (на RelWithDebInfo; -O3 её не
+  # воспроизводит). Отключается только для GCC: настоящие ошибки этого класса по-прежнему ловит
+  # -Wuninitialized, а сборка clang сохраняет предупреждение.
+  target_compile_options(
+    dgds-warnings INTERFACE "$<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>"
+  )
 endif()
 
 target_link_libraries(dgds-warnings INTERFACE dgds-sanitizers)
