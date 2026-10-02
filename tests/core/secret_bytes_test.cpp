@@ -16,7 +16,11 @@ using dgds::core::SecretBytes;
 constexpr std::size_t k_probe_size = 4;
 using Probe = SecretBytes<k_probe_size>;
 
-bool all_zero(const std::uint8_t *bytes, std::size_t size) {
+// В тесте стирания память читается уже после окончания жизни объекта, и тогда GCC 13
+// в оптимизированной сборке теряет знание об инициализации массива-хранилища и объявляет
+// его байты неинициализированными. Невстраиваемая функция разрывает эту видимость: её
+// аргумент — просто указатель на неизвестную память, и ложное срабатывание не возникает.
+[[gnu::noinline]] bool all_zero(const std::uint8_t *bytes, std::size_t size) {
   return std::all_of(bytes, bytes + size, [](std::uint8_t byte) { return byte == 0; });
 }
 
@@ -39,6 +43,7 @@ TEST(SecretBytes, WipesContentOnDestruction) {
 
   probe->~Probe();
 
+  // Объекта в storage уже нет: проверяем, что деструктор оставил после себя нули.
   EXPECT_TRUE(all_zero(storage.data(), storage.size()));
 }
 
