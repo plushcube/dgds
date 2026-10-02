@@ -1,7 +1,10 @@
 include(GoogleTest)
 
+# Предел времени — это детектор зависания, а не бюджет: он должен быть заметно выше самого долгого
+# честного теста. Дольше всех идёт HttpClientFixture.DeliversContentOfLimitSize с четырьмя
+# мегабайтами содержимого: на TSan около пятнадцати секунд, на ASan около трёх. Отсюда тридцать.
 set(DGDS_TEST_TIMEOUT_SECONDS
-    180
+    30
     CACHE STRING "Предельное время одного теста, секунды"
 )
 set(DGDS_TEST_DISCOVERY_TIMEOUT_SECONDS

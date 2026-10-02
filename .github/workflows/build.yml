@@ -58,7 +58,8 @@ jobs:
           if [ "$RUNNER_OS" = "Linux" ]; then
             export LANG=C.UTF-8 LC_ALL=C.UTF-8
           fi
-          cmake -B .build -DCMAKE_BUILD_TYPE=Release -DPATCH_VERSION=${{ github.run_number }} -DWITH_TESTS=ON
+          cmake -B .build -DCMAKE_BUILD_TYPE=Release -DPATCH_VERSION=${{ github.run_number }} \
+            -DWITH_TESTS=ON
 
       - name: Build
         run: cmake --build .build --parallel
@@ -104,9 +105,57 @@ jobs:
       - name: Build
         run: cmake --build .build --parallel
 
+      - name: Give ThreadSanitizer a free address space
+        if: matrix.sanitizer == 'thread'
+        # Известный сбой TSan на Ubuntu 24.04: при высокой энтропии ASLR теневая память
+        # может не отобразиться. Ключ ядра, а не окружение, поэтому sysctl.
+        run: sudo sysctl -w vm.mmap_rnd_bits=28 || echo "vm.mmap_rnd_bits недоступен, продолжаю"
+
+      - name: Smoke the instrumented server
+        if: matrix.sanitizer == 'thread'
+        # Проверка до набора тестов: она отвечает на вопрос, обслуживает ли сервер под
+        # санитайзером вообще, за секунды — вместо вывода «тест начался и замолчал».
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: |
+          root="$(mktemp -d)"
+          .build/bin/dgds-server --root "$root" --port 0 >"$root/banner.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+
+          port=""
+          for _ in $(seq 100); do
+            port="$(grep -oE 'https://127\.0\.0\.1:[0-9]+' "$root/banner.log" | head -1 | cut -d: -f3 || true)"
+            if [ -n "$port" ]; then
+              break
+            fi
+            sleep 0.2
+          done
+
+          if [ -z "$port" ]; then
+            echo "Сервер под санитайзером не объявил адрес за 20 секунд:" >&2
+            cat "$root/banner.log" >&2
+            exit 1
+          fi
+
+          answer="$(curl --silent --show-error --max-time 30 --cacert "$root/tls/server.crt" \
+            --header 'Content-Type: application/json' --data '{"version":1}' \
+            "https://127.0.0.1:$port/catalog")"
+          echo "$answer"
+
+          case "$answer" in
+            *'"version":1'*) echo "Сервер под санитайзером ответил на порту $port" ;;
+            *)
+              echo "Неожиданный ответ сервера" >&2
+              exit 1
+              ;;
+          esac
+
       - name: Test
         env:
           ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        # Предел времени теста приходит из DGDS_TEST_TIMEOUT_SECONDS при конфигурации,
+        # потому что свойство TIMEOUT теста перекрывает флаг --timeout этой команды.
         run: ctest --test-dir .build --output-on-failure

@@ -7,6 +7,13 @@ set(HTTPLIB_USE_ZLIB_IF_AVAILABLE OFF)
 set(HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF)
 set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF)
 
+# Разрешение имени оставлено синхронным. Асинхронная ветка httplib на glibc держит запрос в стековом
+# gaicb, а после таймаута зовёт gai_cancel() и ждёт рабочий поток резолвера без предела (httplib.h,
+# ссылка на yhirose/cpp-httplib#2431) — под ThreadSanitizer этот поток падает внутри аллокатора
+# TSan, и тест после этого висит до предела ctest. Цена отказа: таймаут соединения больше не
+# покрывает DNS, разрешение ограничено таймаутом самого резолвера.
+set(HTTPLIB_USE_NON_BLOCKING_GETADDRINFO OFF)
+
 FetchContent_Declare(
   httplib URL https://github.com/yhirose/cpp-httplib/archive/refs/tags/v0.56.0.zip
               DOWNLOAD_EXTRACT_TIMESTAMP TRUE EXCLUDE_FROM_ALL
