@@ -27,7 +27,11 @@ protected:
     httplib::SSLClient client{"127.0.0.1", m_server.port()};
     client.set_ca_cert_path(m_server.certificate().string());
     client.enable_server_certificate_verification(true);
+    // Все сетевые ожидания ограничены: замолчавший сервер обязан приводить к ошибке
+    // теста, а не к бесконечному ожиданию рукопожатия или ответа.
     client.set_connection_timeout(5);
+    client.set_read_timeout(5);
+    client.set_write_timeout(5);
 
     return client.Post(path, body, "application/json");
   }

@@ -8,6 +8,7 @@
 namespace dgds::test {
 
 inline constexpr int k_server_start_timeout_ms = 10000;
+inline constexpr int k_server_stop_timeout_ms = 5000;
 inline constexpr std::string_view k_server_listen_marker = "Слушаю https://127.0.0.1:";
 
 class ServerProcess {
@@ -30,6 +31,8 @@ public:
   [[nodiscard]] std::filesystem::path certificate() const { return m_root / "tls" / "server.crt"; }
 
 private:
+  [[nodiscard]] bool read_banner(int fd);
+
   std::filesystem::path m_root;
   std::string m_banner;
   pid_t m_child = -1;

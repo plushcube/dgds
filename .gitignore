@@ -49,7 +49,7 @@ openspec/
 
 # Build directories
 .build/
-.build-tsan/
+.build-*/
 build/
 Build/
 build-*/

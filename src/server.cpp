@@ -31,7 +31,8 @@ dgds::core::Timestamp wall_clock() {
 }
 
 void print_usage(std::ostream &out) {
-  out << "dgds [--root <путь>] [--master-key <путь>] [--host <адрес>] [--port <номер>] [--rate-limit <вызовов>]\n"
+  out << "dgds-server [--root <путь>] [--master-key <путь>] [--host <адрес>] [--port <номер>] [--rate-limit "
+         "<вызовов>]\n"
       << "     --root         каталог данных сервера, по умолчанию ~/.dgds\n"
       << "     --master-key   ключ хранилища ключей, по умолчанию <каталог данных>/master.key\n"
       << "     --host         адрес прослушивания, по умолчанию 127.0.0.1\n"

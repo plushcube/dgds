@@ -27,7 +27,7 @@ RUN apt-get update \
     && mkdir /data \
     && chown dgds:dgds /data
 
-COPY --from=builder /source/build/bin/dgds /usr/local/bin/dgds
+COPY --from=builder /source/build/bin/dgds-server /usr/local/bin/dgds-server
 
 USER dgds
 WORKDIR /data
@@ -39,5 +39,5 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
     --header "Content-Type: application/json" --data '{"version":1}' \
     https://127.0.0.1:8443/catalog || exit 1
 
-ENTRYPOINT ["/usr/local/bin/dgds"]
+ENTRYPOINT ["/usr/local/bin/dgds-server"]
 CMD ["--root", "/data", "--host", "0.0.0.0", "--port", "8443"]

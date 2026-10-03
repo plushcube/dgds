@@ -232,7 +232,7 @@ def delivery_scenario(args, binaries, root, certificate, port, pid, credentials,
 def main():
     args = parse_args()
     binaries = Path(args.binaries).resolve()
-    for name in ("dgds", "dgds-example", "dgds-loadgen"):
+    for name in ("dgds-server", "dgds-client", "dgds-loadgen"):
         if not (binaries / name).exists():
             raise SystemExit(f"нет собранной программы {name} в {binaries}")
 
@@ -242,9 +242,9 @@ def main():
 
     try:
         content = write_content(root / "content.txt", args.content)
-        process, port = start_server(binaries / "dgds", root)
+        process, port = start_server(binaries / "dgds-server", root)
         certificate = root / "tls" / "server.crt"
-        print(seed_example(binaries / "dgds-example", certificate, port, root, content).strip().splitlines()[0])
+        print(seed_example(binaries / "dgds-client", certificate, port, root, content).strip().splitlines()[0])
         print(f"стенд {root}, порт {port}")
 
         api(certificate, port, "/register", {"version": 1, "name": "нагрузка"})

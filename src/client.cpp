@@ -61,7 +61,7 @@ struct Options {
 };
 
 void print_usage(std::ostream &out) {
-  out << "dgds-example [--certificate <файл>] [--host <адрес>] [--port <номер>] [--device <каталог>] [--text <файл>]\n"
+  out << "dgds-client [--certificate <файл>] [--host <адрес>] [--port <номер>] [--device <каталог>] [--text <файл>]\n"
       << "     --certificate  сертификат сервера: им проверяется и закрепляется соединение, обязателен\n"
       << "     --host         адрес сервера, по умолчанию " << k_default_host << "\n"
       << "     --port         порт сервера, по умолчанию " << k_default_port << "\n"

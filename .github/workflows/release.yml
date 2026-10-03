@@ -1,4 +1,4 @@
-name: "C++ Release Build"
+name: "C++ Release"
 
 on:
   push:
@@ -9,12 +9,12 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  version:
+    name: Разбор версии
     runs-on: ubuntu-latest
+    outputs:
+      patch: ${{ steps.version.outputs.patch }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
       - name: Resolve version
         id: version
         run: |
@@ -25,6 +25,14 @@ jobs:
           fi
           echo "patch=${version##*.}" >> "$GITHUB_OUTPUT"
 
+  release:
+    name: Пакеты и релиз
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -33,7 +41,8 @@ jobs:
       - name: Configure CMake
         run: |
           export LANG=C.UTF-8 LC_ALL=C.UTF-8
-          cmake -B .build -DPATCH_VERSION=${{ steps.version.outputs.patch }} -DWITH_TESTS=ON
+          cmake -B .build -DCMAKE_BUILD_TYPE=Release \
+            -DPATCH_VERSION=${{ needs.version.outputs.patch }} -DWITH_TESTS=ON
 
       - name: Build
         run: cmake --build .build --parallel
@@ -42,17 +51,84 @@ jobs:
         run: ctest --test-dir .build --output-on-failure
 
       - name: Package
-        run: cmake --build .build --target package
-
-      - name: Resolve package
-        id: package
-        run: echo "deb=$(find .build -maxdepth 1 -name '*.deb' | head -n 1)" >> "$GITHUB_OUTPUT"
+        run: |
+          cmake --build .build --target package
+          find .build -maxdepth 1 \( -name '*.deb' -o -name '*.tar.gz' -o -name '*.sha256' \) -print
+          test -n "$(find .build -maxdepth 1 -name '*.deb' -print -quit)"
+          test -n "$(find .build -maxdepth 1 -name '*.tar.gz' -print -quit)"
+          test -n "$(find .build -maxdepth 1 -name '*.sha256' -print -quit)"
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
-          files: ${{ steps.package.outputs.deb }}
-          draft: false
-          prerelease: false
+          files: |
+            .build/*.deb
+            .build/*.tar.gz
+            .build/*.sha256
+          generate_release_notes: true
+          body: |
+            ## Как развернуть и запустить вживую
+
+            Пакет несёт оба приложения — сервер и клиент-пример, — поэтому проверяющему
+            достаточно скачать `dgds_*_amd64.deb` (или `dgds-*-linux-*.tar.gz`),
+            распаковать и выполнить `packaging/QUICKSTART.md` из пакета: поднять сервер,
+            подставить напечатанный порт в клиент и увидеть расшифрованный текст с метками.
+
+            ```sh
+            # из установленного пакета
+            dgds-server --root /tmp/dgds-stand --port 0
+            dgds-client --certificate /tmp/dgds-stand/tls/server.crt --port <порт из строки «Слушаю»> \
+              --device /tmp/dgds-stand/device
+            ```
+
+            Для .deb и .tar.gz рядом лежат контрольные суммы `*.sha256`.
+
+            ## Готовый образ
+
+            Сервер также собран в контейнер и опубликован в GitHub Container Registry:
+
+            ```sh
+            docker run --name dgds --detach --publish 127.0.0.1:8443:8443 --volume dgds-data:/data \
+              ghcr.io/plushcube/dgds:${{ github.ref_name }}
+            until docker exec dgds test -f /data/tls/server.crt; do sleep 1; done
+            docker cp dgds:/data/tls/server.crt ./server.crt
+            dgds-client --certificate ./server.crt --port 8443 --device /tmp/dgds-device
+            ```
+
+  image:
+    name: Образ в GHCR
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: PATCH_VERSION=${{ needs.version.outputs.patch }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
