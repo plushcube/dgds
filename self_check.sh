@@ -48,8 +48,12 @@ if ! cmake --build .build --parallel >/dev/null; then
 fi
 
 echo "  Testing..."
-if ! ctest --test-dir .build --output-on-failure >/dev/null; then
+test_log=$(mktemp)
+trap 'rm -f "$test_log"' EXIT
+
+if ! ctest --test-dir .build --output-on-failure >"$test_log" 2>&1; then
     echo "❌ Tests failed."
+    cat "$test_log"
     exit 1
 fi
 
