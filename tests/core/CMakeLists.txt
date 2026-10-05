@@ -9,6 +9,7 @@ dgds_add_test_area(
   keys_test.cpp
   mark_channel_test.cpp
   mark_codec_test.cpp
+  mark_key_test.cpp
   package_test.cpp
   ports_test.cpp
   receipt_test.cpp

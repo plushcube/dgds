@@ -17,6 +17,7 @@ add_library(
   "src/signature/author_signature.cpp"
   "src/watermark/mark_channel.cpp"
   "src/watermark/mark_codec.cpp"
+  "src/watermark/mark_key.cpp"
 )
 add_library(dgds::core ALIAS dgds-core)
 
