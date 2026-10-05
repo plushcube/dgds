@@ -66,6 +66,10 @@ void count_occurrence(std::array<Candidate, k_max_candidates> &candidates, std::
 } // namespace
 
 bool has_mark_channel(Content text) {
+  if (!is_valid_utf8(text)) {
+    return false;
+  }
+
   std::size_t significant = 0;
 
   for (std::size_t offset = 0; offset < text.size();) {

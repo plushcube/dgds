@@ -124,6 +124,31 @@ TEST(MarkChannel, ReportsMissingChannel) {
   EXPECT_TRUE(embed_mark(enough_text, make_mark(1)).has_value());
 }
 
+TEST(MarkChannel, RefusesTextOutsideChannelDomain) {
+  const std::string enough = long_text(30);
+
+  ASSERT_TRUE(has_mark_channel(enough));
+
+  EXPECT_FALSE(has_mark_channel(std::string("\xC0\x80") + enough));
+  EXPECT_FALSE(has_mark_channel(std::string("\xE0\x80\x80") + enough));
+  EXPECT_FALSE(has_mark_channel(std::string("\xF0\x80\x80\x80") + enough));
+  EXPECT_FALSE(has_mark_channel(std::string("\xED\xA0\x80") + enough));
+  EXPECT_FALSE(has_mark_channel(std::string("\xF5\x80\x80\x80") + enough));
+  EXPECT_FALSE(has_mark_channel(std::string("\xE2\x80") + enough));
+  EXPECT_FALSE(has_mark_channel(std::string("\x80") + enough));
+  EXPECT_FALSE(embed_mark(std::string("\xED\xA0\x80") + enough, make_mark(3)).has_value());
+}
+
+TEST(MarkChannel, KeepsChannelForValidTextOutsideBmp) {
+  const std::string enough = long_text(30);
+  const std::string with_emoji = enough + "\xF0\x9F\x93\x84";
+  const std::string with_cyrillic = enough + "текст";
+
+  EXPECT_TRUE(has_mark_channel(with_emoji));
+  EXPECT_TRUE(has_mark_channel(with_cyrillic));
+  EXPECT_TRUE(embed_mark(with_emoji, make_mark(7)).has_value());
+}
+
 TEST(MarkChannel, ReadsMarkFromUnalignedExcerpt) {
   const std::string text = long_text(30);
   const Mark mark = make_mark(31337);
