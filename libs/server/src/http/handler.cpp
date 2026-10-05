@@ -20,7 +20,7 @@ struct Route {
   Operation operation;
 };
 
-constexpr std::array<Route, 10> k_routes{{{"/register", &Surface::register_user},
+constexpr std::array<Route, 11> k_routes{{{"/register", &Surface::register_user},
                                           {"/login", &Surface::log_in},
                                           {"/catalog", &Surface::catalog},
                                           {"/publish", &Surface::publish},
@@ -29,14 +29,15 @@ constexpr std::array<Route, 10> k_routes{{{"/register", &Surface::register_user}
                                           {"/purchases", &Surface::purchases},
                                           {"/restore-receipt", &Surface::restore_receipt},
                                           {"/context-identity", &Surface::context_identity},
-                                          {"/fetch-package", &Surface::fetch_package}}};
+                                          {"/fetch-package", &Surface::fetch_package},
+                                          {"/attribute", &Surface::attribute}}};
 
 struct Status {
   core::Content code;
   int status;
 };
 
-const std::array<Status, 26> k_statuses{{
+const std::array<Status, 29> k_statuses{{
     {api::code_of(ProtocolError::request_malformed), 400},
     {api::code_of(ProtocolError::version_unsupported), 400},
     {api::code_of(ProtocolError::response_malformed), 500},
@@ -62,6 +63,9 @@ const std::array<Status, 26> k_statuses{{
     {core::code_of(core::CoreError::key_size_mismatch), 400},
     {core::code_of(core::CoreError::key_malformed), 400},
     {core::code_of(core::CoreError::mark_version_unsupported), 400},
+    {core::code_of(core::CoreError::mark_not_found), 422},
+    {core::code_of(core::CoreError::mark_not_confident), 422},
+    {core::code_of(core::CoreError::mark_authentication_failed), 422},
     {core::code_of(core::CoreError::storage_failed), 500},
 }};
 

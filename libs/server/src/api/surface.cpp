@@ -312,4 +312,31 @@ SurfaceResult Surface::fetch_package(core::Content body) {
   return ok(encode(package.value()));
 }
 
+SurfaceResult Surface::attribute(core::Content body) {
+  if (const auto failure_code = version_failure(body); failure_code.has_value()) {
+    return failure(failure_code.value());
+  }
+
+  const auto credentials = read_credentials(body);
+  const auto text = read_text(body);
+
+  if (!credentials.has_value() || !text.has_value()) {
+    return failure(k_malformed);
+  }
+
+  const auto user_id = authorized(credentials.value());
+
+  if (!user_id.has_value()) {
+    return failure(user_id.error());
+  }
+
+  const auto attribution = m_attribution.attribute(text.value());
+
+  if (!attribution.has_value()) {
+    return failure(attribution.error());
+  }
+
+  return ok(encode(attribution.value()));
+}
+
 } // namespace dgds::server::api

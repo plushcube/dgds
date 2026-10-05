@@ -9,6 +9,7 @@
 #include <dgds/core/models/publication.h>
 #include <dgds/core/models/purchase.h>
 #include <dgds/core/models/user.h>
+#include <dgds/server/models/attribution.h>
 
 #include <cstdint>
 #include <optional>
@@ -19,6 +20,7 @@ namespace dgds::server::api {
 [[nodiscard]] std::optional<std::uint8_t> read_version(core::Content body);
 [[nodiscard]] std::optional<core::Credentials> read_credentials(core::Content body);
 [[nodiscard]] std::optional<core::ContentBuffer> read_name(core::Content body);
+[[nodiscard]] std::optional<core::ContentBuffer> read_text(core::Content body);
 [[nodiscard]] std::optional<core::PublicationDraft> read_draft(core::Content body);
 [[nodiscard]] std::optional<core::PublicationId> read_publication_id(core::Content body);
 [[nodiscard]] std::optional<core::PurchaseId> read_purchase_id(core::Content body);
@@ -36,6 +38,7 @@ namespace dgds::server::api {
 [[nodiscard]] std::string encode(const core::Receipt &receipt);
 [[nodiscard]] std::string encode(const core::Package &package);
 [[nodiscard]] std::string encode(const core::ContentIdentity &identity);
+[[nodiscard]] std::string encode(const Attribution &attribution);
 [[nodiscard]] std::string encode_id(core::PurchaseId id);
 
 } // namespace dgds::server::api

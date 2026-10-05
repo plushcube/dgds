@@ -1,6 +1,7 @@
 #include <dgds/server/api/surface.h>
 #include <dgds/server/http/binding.h>
 #include <dgds/server/middleware/rate_limiter.h>
+#include <dgds/server/services/attribution_service.h>
 #include <dgds/server/services/catalog_service.h>
 #include <dgds/server/services/delivery_service.h>
 #include <dgds/server/services/publication_service.h>
@@ -39,6 +40,7 @@ using dgds::core::generate_author_key;
 using dgds::core::k_protocol_version;
 using dgds::core::sign_author;
 using dgds::core::to_hex;
+using dgds::server::AttributionService;
 using dgds::server::CatalogService;
 using dgds::server::DeliveryService;
 using dgds::server::PublicationService;
@@ -126,10 +128,12 @@ protected:
   PublicationService m_publications{m_identities, m_keys, m_blobs, m_metadata};
   PurchaseService m_purchases{m_keys, m_metadata};
   DeliveryService m_delivery{m_blobs, m_keys, m_metadata};
+  AttributionService m_attribution{m_metadata, m_keys};
   RateLimiter m_limiter;
   dgds::core::Timestamp m_now = 1700000000;
-  Surface m_surface{m_users,     m_sessions, m_catalog, m_publications,
-                    m_purchases, m_delivery, m_limiter, [this]() { return m_now; }};
+  Surface m_surface{m_users,        m_sessions,  m_catalog,
+                    m_publications, m_purchases, m_delivery,
+                    m_attribution,  m_limiter,   [this]() { return m_now; }};
 
   httplib::Server m_server;
   std::thread m_worker;
@@ -240,6 +244,23 @@ TEST_F(HttpBindingTest, ServesScenarioOverHttp) {
   const auto unauthorized = post("/purchases", Json{{"credentials", forged}});
   ASSERT_TRUE(unauthorized);
   EXPECT_EQ(unauthorized->status, 401);
+}
+
+TEST_F(HttpBindingTest, RoutesAttributionAndMapsMissingMark) {
+  const auto registered = post("/register", Json{{"name", "читатель"}});
+  ASSERT_TRUE(registered);
+  ASSERT_EQ(registered->status, 200);
+
+  const auto logged = post("/login", Json{{"name", "читатель"}});
+  ASSERT_TRUE(logged);
+  ASSERT_EQ(logged->status, 200);
+
+  const Json credentials = Json::parse(logged->body).at("data");
+  const auto attributed = post("/attribute", Json{{"credentials", credentials}, {"text", long_text()}});
+
+  ASSERT_TRUE(attributed);
+  EXPECT_EQ(attributed->status, 422) << "маршрут должен разводиться на операцию, а не отвечать operation_unknown";
+  EXPECT_EQ(Json::parse(attributed->body).at("error").at("code").get<std::string>(), "mark_not_found");
 }
 
 } // namespace
