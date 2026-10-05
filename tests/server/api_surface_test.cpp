@@ -16,6 +16,7 @@
 #include <dgds/core/identity/user_id.h>
 #include <dgds/core/models/protocol.h>
 #include <dgds/core/signature/author_signature.h>
+#include <dgds/core/watermark/mark_channel.h>
 #include <dgds/stubs/blob_store/file_blob_store.h>
 #include <dgds/stubs/identity_registry/file_identity_registry.h>
 #include <dgds/stubs/key_store/file_key_store.h>
@@ -280,6 +281,35 @@ TEST_F(SurfaceTest, RejectsDraftFieldOutsideAllowedLength) {
   const auto rejected = response_of(m_surface.publish(request_of(request)));
 
   EXPECT_EQ(rejected.at("error").at("code").get<std::string>(), "request_malformed");
+}
+
+TEST_F(SurfaceTest, RejectsContentOutsideChannelDomain) {
+  const std::string credentials = credentials_of(account_of("автор"));
+  const std::string content = std::string("\xC0\x80") + "строка текста";
+
+  const std::string body = "{\"version\":1,\"credentials\":" + credentials +
+                           ",\"draft\":{\"title\":\"текст\",\"file_name\":\"файл.txt\",\"content\":\"" + content +
+                           "\"},\"author_key\":\"" + std::string(64, 'a') + "\",\"signature\":\"" +
+                           std::string(128, 'b') + "\"}";
+
+  const auto rejected = response_of(m_surface.publish(body));
+
+  EXPECT_EQ(rejected.at("error").at("code").get<std::string>(), "request_malformed");
+
+  const auto identity = content_identity(content);
+
+  ASSERT_TRUE(identity.has_value());
+  EXPECT_EQ(m_identities.claim(identity.value()).value(), dgds::core::ClaimOutcome::claimed)
+      << "идентификатор отвергнутого контента не должен быть захвачен";
+}
+
+TEST_F(SurfaceTest, PublishesValidTextRegardlessOfChannelFit) {
+  const std::string credentials = credentials_of(account_of("автор"));
+  const std::string short_text = "короткий корректный текст";
+
+  EXPECT_FALSE(publish_text(credentials, "автор", short_text).empty());
+  EXPECT_TRUE(dgds::core::has_mark_channel(std::string(200, 'x')));
+  EXPECT_FALSE(dgds::core::has_mark_channel(short_text)) << "короткий текст не вмещает метку, но остаётся допустимым";
 }
 
 TEST_F(SurfaceTest, RejectsContentLargerThanLimit) {

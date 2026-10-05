@@ -65,8 +65,10 @@ void count_occurrence(std::array<Candidate, k_max_candidates> &candidates, std::
 
 } // namespace
 
+bool is_channel_domain(Content text) { return is_valid_utf8(text); }
+
 bool has_mark_channel(Content text) {
-  if (!is_valid_utf8(text)) {
+  if (!is_channel_domain(text)) {
     return false;
   }
 

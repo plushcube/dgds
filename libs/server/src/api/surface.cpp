@@ -1,6 +1,7 @@
 #include <dgds/server/api/surface.h>
 
 #include <dgds/core/models/protocol.h>
+#include <dgds/core/watermark/mark_channel.h>
 #include <dgds/server/api/codec.h>
 #include <dgds/server/api/response.h>
 
@@ -116,6 +117,10 @@ SurfaceResult Surface::publish(core::Content body) {
   const auto signature = read_signature(body);
 
   if (!credentials.has_value() || !draft.has_value() || !author_key.has_value() || !signature.has_value()) {
+    return failure(k_malformed);
+  }
+
+  if (!core::is_channel_domain(draft->content)) {
     return failure(k_malformed);
   }
 

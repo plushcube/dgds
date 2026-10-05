@@ -8,6 +8,7 @@
 
 namespace dgds::core {
 
+[[nodiscard]] bool is_channel_domain(Content content);
 [[nodiscard]] bool has_mark_channel(Content text);
 [[nodiscard]] std::optional<ContentBuffer> embed_mark(Content text, const Mark &mark);
 [[nodiscard]] Result<Mark> read_mark(Content text);
