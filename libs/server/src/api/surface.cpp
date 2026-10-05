@@ -1,7 +1,6 @@
 #include <dgds/server/api/surface.h>
 
 #include <dgds/core/models/protocol.h>
-#include <dgds/core/watermark/mark_channel.h>
 #include <dgds/server/api/codec.h>
 #include <dgds/server/api/response.h>
 
@@ -120,10 +119,6 @@ SurfaceResult Surface::publish(core::Content body) {
     return failure(k_malformed);
   }
 
-  if (!core::is_channel_domain(draft->content)) {
-    return failure(k_malformed);
-  }
-
   const auto author_id = authorized(credentials.value());
 
   if (!author_id.has_value()) {
@@ -138,6 +133,10 @@ SurfaceResult Surface::publish(core::Content body) {
       m_publications.publish(author_id.value(), draft.value(), author_key.value(), signature.value(), m_clock());
 
   if (!publication.has_value()) {
+    if (publication.error() == core::CoreError::content_outside_channel_domain) {
+      return failure(k_malformed);
+    }
+
     return failure(publication.error());
   }
 

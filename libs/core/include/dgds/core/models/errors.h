@@ -29,6 +29,7 @@ enum class CoreError {
   receipt_malformed,
   package_version_unsupported,
   content_mismatch,
+  content_outside_channel_domain,
   signature_invalid,
   mark_malformed,
   mark_version_unsupported,

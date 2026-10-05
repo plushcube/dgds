@@ -89,6 +89,32 @@ private:
   static inline std::atomic<unsigned> counter{0};
 };
 
+TEST_F(PublicationServiceTest, RejectsContentOutsideChannelDomain) {
+  const UserAccount author = register_author("автор");
+
+  const auto keys = generate_author_key();
+  ASSERT_TRUE(keys.has_value());
+
+  const std::string content = std::string("\xC0\x80") + std::string(k_text);
+  const auto signature = sign_content(content, author.name, keys->private_key);
+  ASSERT_TRUE(signature.has_value());
+
+  const PublicationDraft draft{
+      .title = std::string(k_title), .file_name = std::string(k_file_name), .content = content};
+
+  const auto rejected =
+      m_publications.publish(author.user_id, draft, keys->public_key, signature.value(), k_published_at);
+
+  ASSERT_FALSE(rejected.has_value());
+  EXPECT_EQ(rejected.error(), CoreError::content_outside_channel_domain);
+
+  const auto identity = content_identity(content);
+
+  ASSERT_TRUE(identity.has_value());
+  EXPECT_EQ(m_identities.claim(identity.value()).value(), dgds::core::ClaimOutcome::claimed)
+      << "идентификатор отвергнутого контента не должен быть захвачен";
+}
+
 TEST_F(PublicationServiceTest, ReleasesClaimedIdentityWhenPublicationFails) {
   const UserAccount author = register_author("автор");
 

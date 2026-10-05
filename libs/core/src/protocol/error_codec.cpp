@@ -34,6 +34,7 @@ constexpr CodeEntry k_codes[]{
     {CoreError::receipt_malformed, "receipt_malformed"},
     {CoreError::package_version_unsupported, "package_version_unsupported"},
     {CoreError::content_mismatch, "content_mismatch"},
+    {CoreError::content_outside_channel_domain, "content_outside_channel_domain"},
     {CoreError::signature_invalid, "signature_invalid"},
     {CoreError::mark_malformed, "mark_malformed"},
     {CoreError::mark_version_unsupported, "mark_version_unsupported"},
