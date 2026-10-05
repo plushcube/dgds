@@ -37,8 +37,15 @@ if ! ./check_layers.sh; then
 fi
 
 echo "  Building..."
-cmake -S . -B .build >/dev/null
-cmake --build .build --parallel >/dev/null
+if ! cmake -S . -B .build >/dev/null; then
+    echo "❌ Configure failed."
+    exit 1
+fi
+
+if ! cmake --build .build --parallel >/dev/null; then
+    echo "❌ Build failed."
+    exit 1
+fi
 
 echo "  Testing..."
 if ! ctest --test-dir .build --output-on-failure >/dev/null; then
