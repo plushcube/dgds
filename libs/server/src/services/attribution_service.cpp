@@ -1,5 +1,7 @@
 #include <dgds/server/services/attribution_service.h>
 
+#include <dgds/core/identity/canonical_form.h>
+#include <dgds/core/identity/content_identity.h>
 #include <dgds/core/watermark/mark_channel.h>
 
 #include "access.h"
@@ -16,9 +18,16 @@ core::Result<Attribution> AttributionService::attribute(core::Content leaked_tex
     return std::unexpected(marks.error());
   }
 
+  const auto identity = core::content_identity(core::canonical_form(leaked_text));
+
+  if (!identity.has_value()) {
+    return std::unexpected(identity.error());
+  }
+
   std::optional<Access> matched;
   core::CoreError resolution_error = core::CoreError::purchase_not_found;
   bool resolved_any = false;
+  bool mismatched = false;
 
   for (const core::Mark &mark : marks.value()) {
     const auto access = resolve_context(mark.purchase_id, m_metadata);
@@ -40,6 +49,11 @@ core::Result<Attribution> AttributionService::attribute(core::Content leaked_tex
       continue;
     }
 
+    if (identity.value() != access->publication.identity) {
+      mismatched = true;
+      continue;
+    }
+
     if (matched.has_value()) {
       return std::unexpected(core::CoreError::mark_not_confident);
     }
@@ -48,6 +62,10 @@ core::Result<Attribution> AttributionService::attribute(core::Content leaked_tex
   }
 
   if (!matched.has_value()) {
+    if (mismatched) {
+      return std::unexpected(core::CoreError::content_mismatch);
+    }
+
     return std::unexpected(resolved_any ? core::CoreError::mark_authentication_failed : resolution_error);
   }
 

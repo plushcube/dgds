@@ -248,6 +248,51 @@ TEST_F(AttributionServiceTest, RejectsMarkReusedFromAnotherPurchase) {
   EXPECT_EQ(report.error(), CoreError::mark_authentication_failed);
 }
 
+TEST_F(AttributionServiceTest, ReportsEditedTextAsMismatch) {
+  const UserAccount author = register_user("автор");
+  const UserAccount buyer = register_user("покупатель");
+  const std::string text = long_text();
+  const auto publication = publish(author, text);
+
+  const auto device = dgds::core::generate_device_key();
+  ASSERT_TRUE(device.has_value());
+
+  const auto receipt = m_purchases.buy(buyer.user_id, publication.publication_id, device->public_key, k_purchased_at);
+  ASSERT_TRUE(receipt.has_value());
+
+  const std::string delivered = leaked_copy(text, publication.identity, receipt->header.purchase_id);
+  const std::string edited = delivered + "строка, дописанная после выдачи\n";
+
+  const auto report = m_attribution.attribute(edited);
+
+  ASSERT_FALSE(report.has_value());
+  EXPECT_EQ(report.error(), CoreError::content_mismatch);
+}
+
+TEST_F(AttributionServiceTest, ReportsForeignTextAsMismatch) {
+  const UserAccount author = register_user("автор");
+  const UserAccount buyer = register_user("покупатель");
+  const std::string text = long_text();
+  const std::string other_text = long_text() + "другая публикация\n";
+  const auto publication = publish(author, text);
+  const auto other = publish(author, other_text);
+
+  ASSERT_NE(publication.identity, other.identity);
+
+  const auto device = dgds::core::generate_device_key();
+  ASSERT_TRUE(device.has_value());
+
+  const auto receipt = m_purchases.buy(buyer.user_id, publication.publication_id, device->public_key, k_purchased_at);
+  ASSERT_TRUE(receipt.has_value());
+
+  const std::string foreign = leaked_copy(other_text, publication.identity, receipt->header.purchase_id);
+
+  const auto report = m_attribution.attribute(foreign);
+
+  ASSERT_FALSE(report.has_value());
+  EXPECT_EQ(report.error(), CoreError::content_mismatch);
+}
+
 TEST_F(AttributionServiceTest, RefusesTextWithoutMark) {
   const std::string text = long_text();
 
