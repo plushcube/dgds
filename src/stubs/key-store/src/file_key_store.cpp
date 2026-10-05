@@ -3,6 +3,8 @@
 #include <dgds/core/crypto/aead.h>
 #include <dgds/core/crypto/sealed_content_codec.h>
 #include <dgds/core/envelope/keys.h>
+#include <dgds/core/watermark/mark_code.h>
+#include <dgds/core/watermark/mark_key.h>
 #include <dgds/stubs/support/file_storage.h>
 
 #include <expected>
@@ -114,6 +116,16 @@ core::Result<core::SymmetricKey> FileKeyStore::obtain_file_key(const core::Conte
   return std::move(generated.value());
 }
 
+core::Result<core::SymmetricKey> FileKeyStore::obtain_mark_key() const {
+  const auto master = load_master_key();
+
+  if (!master.has_value()) {
+    return std::unexpected(master.error());
+  }
+
+  return core::derive_mark_key(master.value());
+}
+
 core::Result<core::SealedContent> FileKeyStore::seal(const core::ContentIdentity &identity,
                                                      const core::SecureBuffer &plaintext,
                                                      core::Content associated_data) {
@@ -147,6 +159,32 @@ core::Result<core::SealedContent> FileKeyStore::wrap(const core::ContentIdentity
   }
 
   return core::wrap_key(file_key.value(), purchase_key, associated_data);
+}
+
+core::Result<core::Mark> FileKeyStore::seal_mark(const core::ContentIdentity &identity, core::PurchaseId purchase_id) {
+  const auto mark_key = obtain_mark_key();
+
+  if (!mark_key.has_value()) {
+    return std::unexpected(mark_key.error());
+  }
+
+  const auto code = core::mark_code(mark_key.value(), identity, purchase_id, core::k_mark_version);
+
+  if (!code.has_value()) {
+    return std::unexpected(code.error());
+  }
+
+  return core::Mark{.purchase_id = purchase_id, .code = code.value(), .version = core::k_mark_version};
+}
+
+core::Result<bool> FileKeyStore::verify_mark(const core::ContentIdentity &identity, const core::Mark &mark) {
+  const auto mark_key = obtain_mark_key();
+
+  if (!mark_key.has_value()) {
+    return std::unexpected(mark_key.error());
+  }
+
+  return core::verify_mark_code(mark_key.value(), identity, mark);
 }
 
 } // namespace dgds::stubs

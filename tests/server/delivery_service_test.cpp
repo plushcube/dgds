@@ -42,7 +42,7 @@ using dgds::core::open_package;
 using dgds::core::open_receipt_key;
 using dgds::core::PublicationDraft;
 using dgds::core::PublicationRecord;
-using dgds::core::read_mark;
+using dgds::core::read_marks;
 using dgds::core::Receipt;
 using dgds::core::Result;
 using dgds::core::sign_author;
@@ -273,8 +273,8 @@ TEST_F(DeliveryServiceTest, MarksDeliveredContentPerPurchase) {
   ASSERT_TRUE(repeated.has_value());
   EXPECT_NE(repeated->content.nonce, first_package->content.nonce);
 
-  const auto check_delivered = [&text](const dgds::core::Package &package, const dgds::core::Receipt &receipt,
-                                       const dgds::core::DeviceKeyPair &device) {
+  const auto check_delivered = [&](const dgds::core::Package &package, const dgds::core::Receipt &receipt,
+                                   const dgds::core::DeviceKeyPair &device) {
     const auto receipt_key = open_receipt_key(receipt, device.private_key);
     ASSERT_TRUE(receipt_key.has_value());
 
@@ -282,9 +282,23 @@ TEST_F(DeliveryServiceTest, MarksDeliveredContentPerPurchase) {
     ASSERT_TRUE(content.has_value());
     EXPECT_EQ(canonical_form(content->view()), text);
 
-    const auto mark = read_mark(content->view());
-    ASSERT_TRUE(mark.has_value());
-    EXPECT_EQ(mark->purchase_id, receipt.header.purchase_id);
+    const auto marks = read_marks(content->view());
+    ASSERT_TRUE(marks.has_value());
+
+    bool authentic = false;
+
+    for (const dgds::core::Mark &mark : marks.value()) {
+      if (mark.purchase_id != receipt.header.purchase_id) {
+        continue;
+      }
+
+      const auto verified = m_keys.verify_mark(package.identity, mark);
+      ASSERT_TRUE(verified.has_value());
+
+      authentic = authentic || verified.value();
+    }
+
+    EXPECT_TRUE(authentic);
   };
 
   check_delivered(first_package.value(), first_receipt.value(), first_device.value());
@@ -336,7 +350,7 @@ TEST_F(DeliveryServiceTest, SharesUnmarkedDelivery) {
 
   ASSERT_TRUE(content.has_value());
   EXPECT_EQ(content->view(), k_short_text);
-  EXPECT_FALSE(read_mark(content->view()).has_value());
+  EXPECT_FALSE(read_marks(content->view()).has_value());
 }
 
 TEST_F(DeliveryServiceTest, DeliversMarkedCopyToAuthor) {
@@ -359,9 +373,23 @@ TEST_F(DeliveryServiceTest, DeliversMarkedCopyToAuthor) {
   const auto content = open_package(package.value(), receipt_key.value());
   ASSERT_TRUE(content.has_value());
 
-  const auto mark = read_mark(content->view());
-  ASSERT_TRUE(mark.has_value());
-  EXPECT_EQ(mark->purchase_id, publication.publication_id);
+  const auto marks = read_marks(content->view());
+  ASSERT_TRUE(marks.has_value());
+
+  bool authentic = false;
+
+  for (const dgds::core::Mark &mark : marks.value()) {
+    if (mark.purchase_id != receipt->header.purchase_id) {
+      continue;
+    }
+
+    const auto verified = m_keys.verify_mark(publication.identity, mark);
+    ASSERT_TRUE(verified.has_value());
+
+    authentic = authentic || verified.value();
+  }
+
+  EXPECT_TRUE(authentic);
 
   const auto other_device = dgds::core::generate_device_key();
   ASSERT_TRUE(other_device.has_value());

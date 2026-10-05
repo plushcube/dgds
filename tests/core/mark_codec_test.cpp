@@ -8,64 +8,43 @@
 
 namespace {
 
-using dgds::core::CoreError;
 using dgds::core::decode_mark;
 using dgds::core::encode_mark;
+using dgds::core::is_legacy_mark;
 using dgds::core::k_mark_version;
 using dgds::core::Mark;
-using dgds::core::MarkBits;
 
-TEST(MarkCodec, RoundTripKeepsPurchaseId) {
-  const Mark mark{.purchase_id = 42, .version = k_mark_version};
+Mark make_mark(std::uint64_t purchase_id, std::uint8_t seed) {
+  Mark mark{.purchase_id = purchase_id, .code = {}, .version = k_mark_version};
 
-  const auto decoded = decode_mark(encode_mark(mark));
+  for (std::size_t index = 0; index < mark.code.size(); ++index) {
+    mark.code[index] = static_cast<std::uint8_t>(seed + index);
+  }
 
-  ASSERT_TRUE(decoded.has_value());
-  EXPECT_EQ(decoded.value(), mark);
+  return mark;
+}
+
+TEST(MarkCodec, RoundTripKeepsFrame) {
+  const Mark mark = make_mark(42, 10);
+
+  EXPECT_EQ(decode_mark(encode_mark(mark)), mark);
 }
 
 TEST(MarkCodec, RoundTripCoversRangeEnds) {
   for (const std::uint64_t id : {std::uint64_t{0}, std::numeric_limits<std::uint64_t>::max()}) {
-    const Mark mark{.purchase_id = id, .version = k_mark_version};
+    const Mark mark = make_mark(id, 20);
 
-    const auto decoded = decode_mark(encode_mark(mark));
-
-    ASSERT_TRUE(decoded.has_value());
-    EXPECT_EQ(decoded.value().purchase_id, id);
+    EXPECT_EQ(decode_mark(encode_mark(mark)).purchase_id, id);
   }
 }
 
-TEST(MarkCodec, RejectsUnsupportedVersion) {
-  const Mark mark{.purchase_id = 7, .version = k_mark_version + 1};
+TEST(MarkCodec, KeepsVersionVerbatim) {
+  Mark mark = make_mark(7, 30);
+  mark.version = 1;
 
-  const auto decoded = decode_mark(encode_mark(mark));
-
-  ASSERT_FALSE(decoded.has_value());
-  EXPECT_EQ(decoded.error(), CoreError::mark_version_unsupported);
+  EXPECT_EQ(decode_mark(encode_mark(mark)).version, 1);
 }
 
-TEST(MarkCodec, DetectsCorruptedFrame) {
-  const MarkBits encoded = encode_mark(Mark{.purchase_id = 7, .version = k_mark_version});
-
-  for (const std::size_t position : {std::size_t{20}, std::size_t{0}}) {
-    MarkBits bits = encoded;
-    bits[position] = static_cast<std::uint8_t>(bits[position] ^ 1U);
-
-    const auto decoded = decode_mark(bits);
-
-    ASSERT_FALSE(decoded.has_value());
-    EXPECT_EQ(decoded.error(), CoreError::mark_checksum_mismatch);
-  }
-}
-
-TEST(MarkCodec, RejectsMalformedBits) {
-  MarkBits bits = encode_mark(Mark{.purchase_id = 7, .version = k_mark_version});
-  bits[80] = 2;
-
-  const auto decoded = decode_mark(bits);
-
-  ASSERT_FALSE(decoded.has_value());
-  EXPECT_EQ(decoded.error(), CoreError::mark_malformed);
-}
+TEST(MarkCodec, DoesNotTreatCurrentFrameAsLegacy) { EXPECT_FALSE(is_legacy_mark(encode_mark(make_mark(7, 40)))); }
 
 } // namespace

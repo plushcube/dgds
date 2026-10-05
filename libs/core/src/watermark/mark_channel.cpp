@@ -45,8 +45,7 @@ MarkBits to_bits(const Window &window) {
   return bits;
 }
 
-void count_occurrence(std::array<Candidate, k_max_candidates> &candidates, std::size_t &count, bool &overflowed,
-                      const Mark &mark) {
+void count_occurrence(std::array<Candidate, k_max_candidates> &candidates, std::size_t &count, const Mark &mark) {
   for (std::size_t index = 0; index < count; ++index) {
     if (candidates[index].mark == mark) {
       ++candidates[index].count;
@@ -54,13 +53,10 @@ void count_occurrence(std::array<Candidate, k_max_candidates> &candidates, std::
     }
   }
 
-  if (count == k_max_candidates) {
-    overflowed = true;
-    return;
+  if (count < k_max_candidates) {
+    candidates[count] = Candidate{.mark = mark, .count = 1};
+    ++count;
   }
-
-  candidates[count] = Candidate{.mark = mark, .count = 1};
-  ++count;
 }
 
 } // namespace
@@ -119,13 +115,11 @@ std::optional<ContentBuffer> embed_mark(Content text, const Mark &mark) {
   return marked;
 }
 
-Result<Mark> read_mark(Content text) {
+Result<std::vector<Mark>> read_marks(Content text) {
   std::array<Candidate, k_max_candidates> candidates{};
   std::size_t candidate_count = 0;
-  bool overflowed = false;
   bool mark_seen = false;
-  bool window_seen = false;
-  bool valid_seen = false;
+  bool legacy_seen = false;
   Window window;
   std::size_t filled = 0;
 
@@ -150,43 +144,41 @@ Result<Mark> read_mark(Content text) {
       continue;
     }
 
-    window_seen = true;
+    const MarkBits bits = to_bits(window);
 
-    const auto mark = decode_mark(to_bits(window));
-
-    if (mark.has_value()) {
-      valid_seen = true;
-      count_occurrence(candidates, candidate_count, overflowed, mark.value());
-    }
-  }
-
-  const Candidate *confident = nullptr;
-
-  for (std::size_t index = 0; index < candidate_count; ++index) {
-    if (candidates[index].count < k_mark_confidence_threshold) {
+    if (is_legacy_mark(bits)) {
+      legacy_seen = true;
       continue;
     }
 
-    if (confident != nullptr) {
-      return std::unexpected(CoreError::mark_not_confident);
-    }
+    const Mark mark = decode_mark(bits);
 
-    confident = &candidates[index];
+    if (mark.version == k_mark_version) {
+      count_occurrence(candidates, candidate_count, mark);
+    }
   }
 
-  if (confident != nullptr) {
-    return confident->mark;
+  std::vector<Mark> confident;
+
+  for (std::size_t index = 0; index < candidate_count; ++index) {
+    if (candidates[index].count >= k_mark_confidence_threshold) {
+      confident.push_back(candidates[index].mark);
+    }
+  }
+
+  if (legacy_seen) {
+    return std::unexpected(CoreError::mark_version_unsupported);
+  }
+
+  if (!confident.empty()) {
+    return confident;
   }
 
   if (!mark_seen) {
     return std::unexpected(CoreError::mark_not_found);
   }
 
-  if (overflowed || valid_seen || !window_seen) {
-    return std::unexpected(CoreError::mark_not_confident);
-  }
-
-  return std::unexpected(CoreError::mark_malformed);
+  return std::unexpected(CoreError::mark_not_confident);
 }
 
 } // namespace dgds::core

@@ -8,6 +8,7 @@ dgds_add_test_area(
   device_wrap_test.cpp
   keys_test.cpp
   mark_channel_test.cpp
+  mark_code_test.cpp
   mark_codec_test.cpp
   mark_key_test.cpp
   package_test.cpp

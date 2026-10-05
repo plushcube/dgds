@@ -2,7 +2,6 @@
 
 #include <dgds/core/crypto/secure_buffer.h>
 #include <dgds/core/identity/content_identity.h>
-#include <dgds/core/models/mark.h>
 #include <dgds/core/watermark/mark_channel.h>
 
 #include "access.h"
@@ -23,8 +22,13 @@ core::Result<core::SealedContent> DeliveryService::mark_for_purchase(const core:
     return std::unexpected(plaintext.error());
   }
 
-  const std::optional<core::ContentBuffer> marked =
-      core::embed_mark(plaintext->view(), core::Mark{.purchase_id = context_id, .version = core::k_mark_version});
+  const auto mark = m_keys.seal_mark(publication.identity, context_id);
+
+  if (!mark.has_value()) {
+    return std::unexpected(mark.error());
+  }
+
+  const std::optional<core::ContentBuffer> marked = core::embed_mark(plaintext->view(), mark.value());
 
   if (!marked.has_value()) {
     return stored;

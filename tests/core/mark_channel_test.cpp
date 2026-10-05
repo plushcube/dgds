@@ -5,10 +5,13 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -21,11 +24,34 @@ using dgds::core::has_mark_channel;
 using dgds::core::k_mark_bit_count;
 using dgds::core::k_mark_version;
 using dgds::core::Mark;
-using dgds::core::read_mark;
+using dgds::core::MarkBits;
+using dgds::core::read_marks;
 
 constexpr std::string_view k_mark_bytes = "\xE2\x80\x8B";
 
-Mark make_mark(std::uint64_t purchase_id) { return Mark{.purchase_id = purchase_id, .version = k_mark_version}; }
+constexpr std::size_t k_bits_per_byte = 8;
+constexpr std::size_t k_legacy_payload_size = 9;
+constexpr std::size_t k_legacy_checksum_bit_count = 16;
+constexpr std::uint8_t k_legacy_version = 1;
+constexpr std::uint16_t k_crc_polynomial = 0x1021;
+constexpr std::uint16_t k_crc_initial = 0xFFFF;
+constexpr std::uint16_t k_crc_high_bit = 0x8000;
+
+using LegacyPayload = std::array<std::uint8_t, k_legacy_payload_size>;
+
+Mark make_mark(std::uint64_t purchase_id) {
+  Mark mark{.purchase_id = purchase_id, .code = {}, .version = k_mark_version};
+
+  for (std::size_t index = 0; index < mark.code.size(); ++index) {
+    mark.code[index] = static_cast<std::uint8_t>(purchase_id + index);
+  }
+
+  return mark;
+}
+
+bool read_contains(const std::vector<Mark> &marks, const Mark &expected) {
+  return std::find(marks.begin(), marks.end(), expected) != marks.end();
+}
 
 std::string long_text(std::size_t lines) {
   std::string text;
@@ -57,6 +83,70 @@ std::size_t offset_of_significant(Content text, std::size_t count) {
   return text.size();
 }
 
+std::string embed_bits(Content text, const MarkBits &bits) {
+  std::string marked;
+  marked.reserve(text.size() + bits.size());
+  std::size_t significant = 0;
+
+  for (const char symbol : text) {
+    marked.push_back(symbol);
+
+    if (bits[significant % k_mark_bit_count] == 1) {
+      marked.append(k_mark_bytes);
+    }
+
+    ++significant;
+  }
+
+  return marked;
+}
+
+std::uint16_t crc16(const LegacyPayload &payload) {
+  std::uint16_t crc = k_crc_initial;
+
+  for (const std::uint8_t byte : payload) {
+    crc ^= static_cast<std::uint16_t>(byte) << k_bits_per_byte;
+
+    for (std::size_t bit = 0; bit < k_bits_per_byte; ++bit) {
+      const bool carry = (crc & k_crc_high_bit) != 0;
+      crc = static_cast<std::uint16_t>(crc << 1);
+
+      if (carry) {
+        crc ^= k_crc_polynomial;
+      }
+    }
+  }
+
+  return crc;
+}
+
+MarkBits legacy_bits(std::uint64_t purchase_id) {
+  LegacyPayload payload{};
+  payload[0] = k_legacy_version;
+
+  for (std::size_t index = 0; index < sizeof(purchase_id); ++index) {
+    payload[index + 1] =
+        static_cast<std::uint8_t>(purchase_id >> ((sizeof(purchase_id) - 1 - index) * k_bits_per_byte));
+  }
+
+  const std::uint16_t checksum = crc16(payload);
+  MarkBits bits{};
+
+  for (std::size_t index = 0; index < payload.size(); ++index) {
+    for (std::size_t bit = 0; bit < k_bits_per_byte; ++bit) {
+      bits[index * k_bits_per_byte + bit] =
+          static_cast<std::uint8_t>((payload[index] >> (k_bits_per_byte - 1 - bit)) & 1U);
+    }
+  }
+
+  for (std::size_t bit = 0; bit < k_legacy_checksum_bit_count; ++bit) {
+    const std::size_t offset = k_legacy_payload_size * k_bits_per_byte + bit;
+    bits[offset] = static_cast<std::uint8_t>((checksum >> (k_legacy_checksum_bit_count - 1 - bit)) & 1U);
+  }
+
+  return bits;
+}
+
 TEST(MarkChannel, EmbedsDeterministically) {
   const std::string text = long_text(10);
   const Mark mark = make_mark(4242);
@@ -77,18 +167,18 @@ TEST(MarkChannel, ReadsMarkFromAnyOccurrence) {
   const auto marked = embed_mark(text, mark);
   ASSERT_TRUE(marked.has_value());
 
-  const auto whole = read_mark(marked.value());
+  const auto whole = read_marks(marked.value());
   ASSERT_TRUE(whole.has_value());
-  EXPECT_EQ(whole.value(), mark);
+  EXPECT_TRUE(read_contains(whole.value(), mark));
 
   for (std::size_t block = 1; block < 4; ++block) {
     const std::size_t offset = offset_of_significant(marked.value(), block * k_mark_bit_count);
     ASSERT_LT(offset, marked->size());
 
-    const auto occurrence = read_mark(Content(marked->data() + offset, marked->size() - offset));
+    const auto occurrence = read_marks(Content(marked->data() + offset, marked->size() - offset));
 
     ASSERT_TRUE(occurrence.has_value()) << block;
-    EXPECT_EQ(occurrence.value(), mark) << block;
+    EXPECT_TRUE(read_contains(occurrence.value(), mark)) << block;
   }
 }
 
@@ -157,10 +247,10 @@ TEST(MarkChannel, ReadsMarkFromUnalignedExcerpt) {
   ASSERT_TRUE(marked.has_value());
 
   const std::size_t offset = offset_of_significant(marked.value(), 37);
-  const auto excerpt = read_mark(Content(marked->data() + offset, marked->size() - offset));
+  const auto excerpt = read_marks(Content(marked->data() + offset, marked->size() - offset));
 
   ASSERT_TRUE(excerpt.has_value());
-  EXPECT_EQ(excerpt.value(), mark);
+  EXPECT_TRUE(read_contains(excerpt.value(), mark));
 }
 
 TEST(MarkChannel, SurvivesPartialTruncation) {
@@ -171,10 +261,10 @@ TEST(MarkChannel, SurvivesPartialTruncation) {
   ASSERT_TRUE(marked.has_value());
 
   const std::size_t cut = offset_of_significant(marked.value(), k_mark_bit_count * 3);
-  const auto truncated = read_mark(Content(marked->data(), cut));
+  const auto truncated = read_marks(Content(marked->data(), cut));
 
   ASSERT_TRUE(truncated.has_value());
-  EXPECT_EQ(truncated.value(), mark);
+  EXPECT_TRUE(read_contains(truncated.value(), mark));
 }
 
 TEST(MarkChannel, ToleratesDamageWhileOccurrencesRemain) {
@@ -189,10 +279,10 @@ TEST(MarkChannel, ToleratesDamageWhileOccurrencesRemain) {
   ASSERT_NE(last, std::string::npos);
   damaged.erase(last, k_mark_bytes.size());
 
-  const auto read = read_mark(damaged);
+  const auto read = read_marks(damaged);
 
   ASSERT_TRUE(read.has_value());
-  EXPECT_EQ(read.value(), mark);
+  EXPECT_TRUE(read_contains(read.value(), mark));
 }
 
 TEST(MarkChannel, RequiresEnoughOccurrences) {
@@ -201,43 +291,28 @@ TEST(MarkChannel, RequiresEnoughOccurrences) {
   const auto marked = embed_mark(text, make_mark(11));
   ASSERT_TRUE(marked.has_value());
 
-  const auto read = read_mark(marked.value());
+  const auto read = read_marks(marked.value());
 
   ASSERT_FALSE(read.has_value());
   EXPECT_EQ(read.error(), CoreError::mark_not_confident);
 }
 
-TEST(MarkChannel, RejectsDamagedMark) {
-  const std::string text(k_mark_bit_count + 8, 'x');
-
-  const auto marked = embed_mark(text, make_mark(12));
-  ASSERT_TRUE(marked.has_value());
-
-  std::string damaged = marked.value();
-  const std::size_t first = damaged.find(k_mark_bytes);
-  ASSERT_NE(first, std::string::npos);
-  damaged.erase(first, k_mark_bytes.size());
-
-  const auto read = read_mark(damaged);
-
-  ASSERT_FALSE(read.has_value());
-  EXPECT_EQ(read.error(), CoreError::mark_malformed);
-}
-
 TEST(MarkChannel, ReportsAbsentMark) {
   const std::string text = long_text(20);
 
-  const auto read = read_mark(text);
+  const auto read = read_marks(text);
 
   ASSERT_FALSE(read.has_value());
   EXPECT_EQ(read.error(), CoreError::mark_not_found);
 }
 
-TEST(MarkChannel, RejectsConflictingOccurrences) {
-  const std::string text = long_text(30);
+TEST(MarkChannel, ReportsEveryConflictingOccurrence) {
+  const std::string text = long_text(60);
+  const Mark first_mark = make_mark(1);
+  const Mark second_mark = make_mark(2);
 
-  const auto first = embed_mark(text, make_mark(1));
-  const auto second = embed_mark(text, make_mark(2));
+  const auto first = embed_mark(text, first_mark);
+  const auto second = embed_mark(text, second_mark);
   ASSERT_TRUE(first.has_value());
   ASSERT_TRUE(second.has_value());
 
@@ -246,10 +321,20 @@ TEST(MarkChannel, RejectsConflictingOccurrences) {
 
   const std::string spliced = first->substr(0, cut_first) + second->substr(cut_second);
 
-  const auto read = read_mark(spliced);
+  const auto read = read_marks(spliced);
+
+  ASSERT_TRUE(read.has_value());
+  EXPECT_TRUE(read_contains(read.value(), first_mark));
+  EXPECT_TRUE(read_contains(read.value(), second_mark));
+}
+
+TEST(MarkChannel, RejectsLegacyMarkVersion) {
+  const std::string marked = embed_bits(long_text(30), legacy_bits(5));
+
+  const auto read = read_marks(marked);
 
   ASSERT_FALSE(read.has_value());
-  EXPECT_EQ(read.error(), CoreError::mark_not_confident);
+  EXPECT_EQ(read.error(), CoreError::mark_version_unsupported);
 }
 
 } // namespace

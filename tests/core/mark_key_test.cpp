@@ -94,7 +94,7 @@ TEST(MarkKey, SecretDoesNotReachDeliveredContent) {
   const SymmetricKey file_key = make_key(90);
   const std::string text = long_text(10);
 
-  const auto marked = embed_mark(text, Mark{.purchase_id = 4242, .version = k_mark_version});
+  const auto marked = embed_mark(text, Mark{.purchase_id = 4242, .code = {}, .version = k_mark_version});
   ASSERT_TRUE(marked.has_value());
   ASSERT_GT(marked->size(), text.size());
 

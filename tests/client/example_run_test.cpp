@@ -4,6 +4,7 @@
 #include <dgds/core/models/protocol.h>
 #include <dgds/server/models/attribution.h>
 #include <dgds/server/services/attribution_service.h>
+#include <dgds/stubs/key_store/file_key_store.h>
 #include <dgds/stubs/metadata_registry/file_metadata_registry.h>
 
 #include <gtest/gtest.h>
@@ -23,6 +24,7 @@ namespace {
 using dgds::core::canonical_form;
 using dgds::server::AccessKind;
 using dgds::server::AttributionService;
+using dgds::stubs::FileKeyStore;
 using dgds::stubs::FileMetadataRegistry;
 using dgds::test::ServerProcess;
 
@@ -165,7 +167,8 @@ TEST_F(ExampleRunTest, PrintsPurchasedContentAndLeavesNoPlaintext) {
   }
 
   FileMetadataRegistry metadata{m_root / "server" / "metadata"};
-  AttributionService attribution{metadata};
+  FileKeyStore keys{m_root / "server" / "master.key", m_root / "server" / "keys"};
+  AttributionService attribution{metadata, keys};
 
   const auto report = attribution.attribute(result.output);
 

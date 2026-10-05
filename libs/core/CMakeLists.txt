@@ -16,6 +16,7 @@ add_library(
   "src/protocol/error_codec.cpp"
   "src/signature/author_signature.cpp"
   "src/watermark/mark_channel.cpp"
+  "src/watermark/mark_code.cpp"
   "src/watermark/mark_codec.cpp"
   "src/watermark/mark_key.cpp"
 )

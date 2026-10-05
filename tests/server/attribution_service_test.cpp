@@ -28,6 +28,7 @@ namespace {
 
 using dgds::core::AuthorPrivateKey;
 using dgds::core::Content;
+using dgds::core::ContentIdentity;
 using dgds::core::CoreError;
 using dgds::core::embed_mark;
 using dgds::core::k_mark_version;
@@ -105,8 +106,13 @@ protected:
     return publication.value();
   }
 
-  [[nodiscard]] std::string leaked_copy(std::string_view text, std::uint64_t context_id) {
-    const auto marked = embed_mark(text, Mark{.purchase_id = context_id, .version = k_mark_version});
+  [[nodiscard]] std::string leaked_copy(std::string_view text, const ContentIdentity &identity,
+                                        std::uint64_t context_id) {
+    const auto mark = m_keys.seal_mark(identity, context_id);
+    EXPECT_TRUE(mark.has_value());
+
+    const Mark fallback{.purchase_id = context_id, .code = {}, .version = k_mark_version};
+    const auto marked = embed_mark(text, mark.value_or(fallback));
     EXPECT_TRUE(marked.has_value());
 
     return marked.value_or(std::string(text));
@@ -120,7 +126,7 @@ protected:
   UserService m_users{m_metadata, m_sessions};
   PublicationService m_publications{m_identities, m_keys, m_blobs, m_metadata};
   PurchaseService m_purchases{m_keys, m_metadata};
-  AttributionService m_attribution{m_metadata};
+  AttributionService m_attribution{m_metadata, m_keys};
 
 private:
   dgds::server::SessionStore m_sessions;
@@ -139,7 +145,7 @@ TEST_F(AttributionServiceTest, MatchesPurchaseByMark) {
   const auto receipt = m_purchases.buy(buyer.user_id, publication.publication_id, device->public_key, k_purchased_at);
   ASSERT_TRUE(receipt.has_value());
 
-  const auto report = m_attribution.attribute(leaked_copy(text, receipt->header.purchase_id));
+  const auto report = m_attribution.attribute(leaked_copy(text, publication.identity, receipt->header.purchase_id));
 
   ASSERT_TRUE(report.has_value());
   EXPECT_EQ(report->kind, AccessKind::purchase);
@@ -156,7 +162,7 @@ TEST_F(AttributionServiceTest, AttributesAuthorCopy) {
   const std::string text = long_text();
   const auto publication = publish(author, text);
 
-  const auto report = m_attribution.attribute(leaked_copy(text, publication.publication_id));
+  const auto report = m_attribution.attribute(leaked_copy(text, publication.identity, publication.publication_id));
 
   ASSERT_TRUE(report.has_value());
   EXPECT_EQ(report->kind, AccessKind::author);
@@ -169,14 +175,77 @@ TEST_F(AttributionServiceTest, AttributesAuthorCopy) {
 }
 
 TEST_F(AttributionServiceTest, ReportsUnknownMark) {
+  const UserAccount author = register_user("автор");
   const std::string text = long_text();
+  const auto publication = publish(author, text);
+
   const auto unknown = dgds::core::generate_identifier();
   ASSERT_TRUE(unknown.has_value());
 
-  const auto report = m_attribution.attribute(leaked_copy(text, unknown.value()));
+  const auto report = m_attribution.attribute(leaked_copy(text, publication.identity, unknown.value()));
 
   ASSERT_FALSE(report.has_value());
   EXPECT_EQ(report.error(), CoreError::purchase_not_found);
+}
+
+TEST_F(AttributionServiceTest, RejectsMarkWithCorruptedCode) {
+  const UserAccount author = register_user("автор");
+  const UserAccount buyer = register_user("покупатель");
+  const std::string text = long_text();
+  const auto publication = publish(author, text);
+
+  const auto device = dgds::core::generate_device_key();
+  ASSERT_TRUE(device.has_value());
+
+  const auto receipt = m_purchases.buy(buyer.user_id, publication.publication_id, device->public_key, k_purchased_at);
+  ASSERT_TRUE(receipt.has_value());
+
+  const auto authentic = m_keys.seal_mark(publication.identity, receipt->header.purchase_id);
+  ASSERT_TRUE(authentic.has_value());
+
+  Mark forged = authentic.value();
+  forged.code[0] ^= 0x01u;
+
+  const auto marked = embed_mark(text, forged);
+  ASSERT_TRUE(marked.has_value());
+
+  const auto report = m_attribution.attribute(marked.value());
+
+  ASSERT_FALSE(report.has_value());
+  EXPECT_EQ(report.error(), CoreError::mark_authentication_failed);
+}
+
+TEST_F(AttributionServiceTest, RejectsMarkReusedFromAnotherPurchase) {
+  const UserAccount author = register_user("автор");
+  const UserAccount first = register_user("первый");
+  const UserAccount second = register_user("второй");
+  const std::string text = long_text();
+  const auto publication = publish(author, text);
+
+  const auto first_device = dgds::core::generate_device_key();
+  const auto second_device = dgds::core::generate_device_key();
+  ASSERT_TRUE(first_device.has_value());
+  ASSERT_TRUE(second_device.has_value());
+
+  const auto first_receipt =
+      m_purchases.buy(first.user_id, publication.publication_id, first_device->public_key, k_purchased_at);
+  const auto second_receipt =
+      m_purchases.buy(second.user_id, publication.publication_id, second_device->public_key, k_purchased_at + 10);
+  ASSERT_TRUE(first_receipt.has_value());
+  ASSERT_TRUE(second_receipt.has_value());
+
+  const auto authentic = m_keys.seal_mark(publication.identity, first_receipt->header.purchase_id);
+  ASSERT_TRUE(authentic.has_value());
+
+  const Mark forged{
+      .purchase_id = second_receipt->header.purchase_id, .code = authentic->code, .version = k_mark_version};
+  const auto marked = embed_mark(text, forged);
+  ASSERT_TRUE(marked.has_value());
+
+  const auto report = m_attribution.attribute(marked.value());
+
+  ASSERT_FALSE(report.has_value());
+  EXPECT_EQ(report.error(), CoreError::mark_authentication_failed);
 }
 
 TEST_F(AttributionServiceTest, RefusesTextWithoutMark) {
