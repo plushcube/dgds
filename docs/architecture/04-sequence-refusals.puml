@@ -125,6 +125,54 @@ group Права на контекст нет
     end
 end
 
+group Запрос определения покупки не разобран или не авторизован
+    facade -> transport: attribute(учётные данные, text)
+    transport -> http: HTTPS
+    http -> surface: вызов операции
+    alt поля text нет или оно пусто
+        surface --> transport: request_malformed (400)
+    else токен сессии не разрешается или принадлежит другому пользователю
+        surface --> transport: authorization_failed (401)
+    end
+end
+
+group Метка в тексте не найдена или не уверена
+    facade -> transport: attribute(учётные данные, text)
+    transport -> http: HTTPS
+    http -> surface: вызов операции
+    surface -> services: attribute(text)
+    services -> core: извлечение метки\n(кадр повторяется с периодом своей длины)
+    alt метки в тексте нет
+        core --> services: mark_not_found
+        services --> surface: mark_not_found (422)
+    else метка есть, но вхождений мало для уверенного определения
+        core --> services: mark_not_confident
+        services --> surface: mark_not_confident (422)
+    end
+end
+
+group Метка не подтверждена или текст не тот
+    facade -> transport: attribute(учётные данные, text)
+    transport -> http: HTTPS
+    http -> surface: вызов операции
+    surface -> services: attribute(text)
+    services -> core: канонический отпечаток принесённого текста
+    services -> adapters: найти покупку по идентификатору метки
+    alt покупки с таким идентификатором нет
+        adapters --> services: не найдена
+        services --> surface: purchase_not_found (404)
+    else код аутентичности метки не сошёлся (метка собрана без секрета)
+        services -> adapters: проверка кода метки (verify_mark)
+        adapters --> services: код не сошёлся
+        services --> surface: mark_authentication_failed (422)
+    else код сошёлся, но отпечаток текста не совпал с идентичностью публикации
+        services -> adapters: сверка отпечатка с публикацией
+        adapters --> services: не совпал
+        services --> surface: content_mismatch (422)
+    end
+    note over services, adapters: «Покупка не найдена» и «текст не соответствует публикации» —\nразные отказы: в первом покупки с таким идентификатором нет,\nво втором покупка есть, но принесённый текст ей не отвечает.\nНесовпадение не выдаётся за установленный факт нарушения
+end
+
 group Чек на устройстве не разбирается
     facade -> facade: разбор сохранённого чека
     alt блока нет
