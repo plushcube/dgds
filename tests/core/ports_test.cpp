@@ -46,6 +46,8 @@ static_assert(k_returns_no_key<&BlobStore::load>);
 static_assert(k_returns_no_key<&KeyStore::seal>);
 static_assert(k_returns_no_key<&KeyStore::open>);
 static_assert(k_returns_no_key<&KeyStore::wrap>);
+static_assert(k_returns_no_key<&KeyStore::seal_mark>);
+static_assert(k_returns_no_key<&KeyStore::verify_mark>);
 
 static_assert(k_returns_no_key<&MetadataRegistry::add_user>);
 static_assert(k_returns_no_key<&MetadataRegistry::find_user>);
@@ -61,6 +63,7 @@ static_assert(k_returns_no_key<&MetadataRegistry::purchases_of_user>);
 static_assert(k_returns_no_key<&MetadataRegistry::purchase_count>);
 static_assert(k_returns_no_key<&MetadataRegistry::save_receipt>);
 static_assert(k_returns_no_key<&MetadataRegistry::find_receipt>);
+static_assert(k_returns_no_key<&MetadataRegistry::has_receipt>);
 
 static_assert(k_returns_no_key<&IdentityRegistry::claim>);
 

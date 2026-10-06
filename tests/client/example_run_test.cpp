@@ -4,6 +4,7 @@
 #include <dgds/core/models/protocol.h>
 #include <dgds/server/models/attribution.h>
 #include <dgds/server/services/attribution_service.h>
+#include <dgds/stubs/key_store/file_key_store.h>
 #include <dgds/stubs/metadata_registry/file_metadata_registry.h>
 
 #include <gtest/gtest.h>
@@ -23,6 +24,7 @@ namespace {
 using dgds::core::canonical_form;
 using dgds::server::AccessKind;
 using dgds::server::AttributionService;
+using dgds::stubs::FileKeyStore;
 using dgds::stubs::FileMetadataRegistry;
 using dgds::test::ServerProcess;
 
@@ -165,16 +167,30 @@ TEST_F(ExampleRunTest, PrintsPurchasedContentAndLeavesNoPlaintext) {
   }
 
   FileMetadataRegistry metadata{m_root / "server" / "metadata"};
-  AttributionService attribution{metadata};
+  FileKeyStore keys{m_root / "server" / "master.key", m_root / "server" / "keys"};
+  AttributionService attribution{metadata, keys};
 
-  const auto report = attribution.attribute(result.output);
+  constexpr std::string_view k_content_start = "=== потребитель выводит полученный контент ===\n";
+  constexpr std::string_view k_content_end = "=== конец контента ===\n";
 
-  ASSERT_TRUE(report.has_value());
-  EXPECT_EQ(report->kind, AccessKind::purchase);
+  const std::size_t content_start = result.output.find(k_content_start);
+  const std::size_t content_end = result.output.find(k_content_end);
+
+  ASSERT_NE(content_start, std::string::npos);
+  ASSERT_NE(content_end, std::string::npos);
+  ASSERT_LT(content_start, content_end);
+
+  const std::string delivered = result.output.substr(content_start + k_content_start.size(),
+                                                     content_end - content_start - k_content_start.size());
 
   const auto publications = metadata.publications(0, dgds::core::k_default_page_size);
   ASSERT_TRUE(publications.has_value());
   ASSERT_EQ(publications->records.size(), 1U);
+
+  const auto report = attribution.attribute(delivered);
+
+  ASSERT_TRUE(report.has_value());
+  EXPECT_EQ(report->kind, AccessKind::purchase);
   EXPECT_EQ(report->publication_id, publications->records.front().publication_id);
   EXPECT_NE(report->user_id, publications->records.front().author_id);
 }

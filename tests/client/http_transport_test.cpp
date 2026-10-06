@@ -7,9 +7,18 @@
 
 #include <gtest/gtest.h>
 
+#include <netinet/in.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -69,6 +78,219 @@ private:
   httplib::SSLServer m_server;
   std::thread m_thread;
   int m_port = 0;
+};
+
+class ConnectionProxy {
+public:
+  ConnectionProxy() = default;
+  ConnectionProxy(const ConnectionProxy &) = delete;
+  ConnectionProxy &operator=(const ConnectionProxy &) = delete;
+  ConnectionProxy(ConnectionProxy &&) = delete;
+  ConnectionProxy &operator=(ConnectionProxy &&) = delete;
+  ~ConnectionProxy() { stop(); }
+
+  [[nodiscard]] bool start(int upstream_port) {
+    m_upstream_port = upstream_port;
+    m_listen = ::socket(AF_INET, SOCK_STREAM, 0);
+
+    if (m_listen < 0) {
+      return false;
+    }
+
+    configure_socket(m_listen);
+
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_port = 0;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+    if (::bind(m_listen, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0 || ::listen(m_listen, 16) != 0) {
+      ::close(m_listen);
+      return false;
+    }
+
+    sockaddr_in bound{};
+    socklen_t size = sizeof(bound);
+
+    if (::getsockname(m_listen, reinterpret_cast<sockaddr *>(&bound), &size) != 0) {
+      ::close(m_listen);
+      return false;
+    }
+
+    m_port = ntohs(bound.sin_port);
+    m_running = true;
+    m_accept = std::thread([this] { accept_connections(); });
+
+    return true;
+  }
+
+  void stop() {
+    if (!m_running.exchange(false)) {
+      return;
+    }
+
+    ::shutdown(m_listen, SHUT_RDWR);
+    ::close(m_listen);
+
+    if (m_accept.joinable()) {
+      m_accept.join();
+    }
+
+    for (std::thread &worker : m_workers) {
+      if (worker.joinable()) {
+        worker.join();
+      }
+    }
+
+    m_workers.clear();
+  }
+
+  [[nodiscard]] int port() const { return m_port; }
+
+  [[nodiscard]] unsigned accepted() const { return m_accepted.load(); }
+
+  void break_next_request() { m_break_target.store(m_active_client.load()); }
+
+private:
+  static void configure_socket(int fd) {
+    const int reuse = 1;
+    ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+#ifdef SO_NOSIGPIPE
+    const int enabled = 1;
+    ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &enabled, sizeof(enabled));
+#endif
+  }
+
+  static int write_all(int fd, const char *data, std::size_t size) {
+    std::size_t written = 0;
+
+    while (written < size) {
+#ifdef MSG_NOSIGNAL
+      const ssize_t sent = ::send(fd, data + written, size - written, MSG_NOSIGNAL);
+#else
+      const ssize_t sent = ::send(fd, data + written, size - written, 0);
+#endif
+
+      if (sent <= 0) {
+        return -1;
+      }
+
+      written += static_cast<std::size_t>(sent);
+    }
+
+    return 0;
+  }
+
+  void accept_connections() {
+    while (m_running.load()) {
+      const int client = ::accept(m_listen, nullptr, nullptr);
+
+      if (client < 0) {
+        if (!m_running.load()) {
+          return;
+        }
+
+        continue;
+      }
+
+      configure_socket(client);
+      m_accepted.fetch_add(1);
+      m_workers.emplace_back([this, client] { forward(client); });
+    }
+  }
+
+  void forward(int client) {
+    const int upstream = ::socket(AF_INET, SOCK_STREAM, 0);
+
+    if (upstream < 0) {
+      ::close(client);
+      return;
+    }
+
+    configure_socket(upstream);
+
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(static_cast<std::uint16_t>(m_upstream_port));
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+    if (::connect(upstream, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0) {
+      ::close(upstream);
+      ::close(client);
+      return;
+    }
+
+    pollfd watched[2] = {{client, POLLIN, 0}, {upstream, POLLIN, 0}};
+    char buffer[16384];
+    bool breaking = false;
+
+    while (true) {
+      if (::poll(watched, 2, -1) < 0) {
+        break;
+      }
+
+      if ((watched[0].revents & POLLIN) != 0) {
+        const ssize_t received = ::recv(client, buffer, sizeof(buffer), 0);
+
+        if (received <= 0) {
+          break;
+        }
+
+        if (m_break_target.load() == client) {
+          m_break_target.store(-1);
+          m_active_client.store(-1);
+          breaking = true;
+          break;
+        }
+
+        m_active_client.store(client);
+
+        if (write_all(upstream, buffer, static_cast<std::size_t>(received)) != 0) {
+          break;
+        }
+      }
+
+      if ((watched[1].revents & POLLIN) != 0) {
+        const ssize_t received = ::recv(upstream, buffer, sizeof(buffer), 0);
+
+        if (received <= 0) {
+          break;
+        }
+
+        if (write_all(client, buffer, static_cast<std::size_t>(received)) != 0) {
+          break;
+        }
+      }
+    }
+
+    if (breaking) {
+      ::shutdown(client, SHUT_WR);
+
+      while (m_running.load()) {
+        pollfd readable{client, POLLIN, 0};
+        const int ready = ::poll(&readable, 1, 20);
+
+        if (ready < 0 || (ready > 0 && ::recv(client, buffer, sizeof(buffer), 0) <= 0)) {
+          break;
+        }
+      }
+    }
+
+    ::shutdown(client, SHUT_RDWR);
+    ::close(client);
+    ::shutdown(upstream, SHUT_RDWR);
+    ::close(upstream);
+  }
+
+  int m_listen = -1;
+  int m_port = 0;
+  int m_upstream_port = 0;
+  std::atomic<unsigned> m_accepted{0};
+  std::atomic<int> m_active_client{-1};
+  std::atomic<int> m_break_target{-1};
+  std::atomic<bool> m_running{false};
+  std::thread m_accept;
+  std::vector<std::thread> m_workers;
 };
 
 TEST_F(HttpClientFixture, DeliversContentOfLimitSize) {
@@ -228,6 +450,91 @@ TEST_F(HttpClientFixture, RefusesUnsupportedProtocolVersion) {
 
   ASSERT_FALSE(catalog.has_value());
   EXPECT_EQ(catalog.error(), CoreError::protocol_version_unsupported);
+}
+
+TEST_F(HttpClientFixture, ReusesOneConnectionForRepeatedCalls) {
+  ConnectionProxy proxy;
+  ASSERT_TRUE(proxy.start(m_server.port()));
+
+  const auto trust = load_server_trust(m_server.certificate());
+  ASSERT_TRUE(trust.has_value());
+
+  HttpTransport transport{Endpoint{.host = "127.0.0.1", .port = proxy.port()}, trust.value()};
+
+  const auto first = transport.catalog(0, dgds::core::k_default_page_size);
+  const auto second = transport.catalog(0, dgds::core::k_default_page_size);
+  const auto third = transport.catalog(0, dgds::core::k_default_page_size);
+
+  ASSERT_TRUE(first.has_value()) << dgds::core::code_of(first.error());
+  ASSERT_TRUE(second.has_value()) << dgds::core::code_of(second.error());
+  ASSERT_TRUE(third.has_value()) << dgds::core::code_of(third.error());
+  EXPECT_EQ(proxy.accepted(), 1U) << "повторные вызовы открывают новое соединение";
+}
+
+TEST_F(HttpClientFixture, RecoversAfterServerBreaksKeepAlive) {
+  ConnectionProxy proxy;
+  ASSERT_TRUE(proxy.start(m_server.port()));
+
+  const auto trust = load_server_trust(m_server.certificate());
+  ASSERT_TRUE(trust.has_value());
+
+  HttpTransport transport{Endpoint{.host = "127.0.0.1", .port = proxy.port()}, trust.value()};
+
+  const auto first = transport.catalog(0, dgds::core::k_default_page_size);
+  ASSERT_TRUE(first.has_value()) << dgds::core::code_of(first.error());
+
+  proxy.break_next_request();
+
+  const auto second = transport.catalog(0, dgds::core::k_default_page_size);
+  ASSERT_TRUE(second.has_value()) << dgds::core::code_of(second.error());
+  EXPECT_EQ(proxy.accepted(), 2U) << "разорванное соединение не переоткрыто";
+}
+
+TEST_F(HttpClientFixture, DoesNotMixConcurrentCalls) {
+  ASSERT_NE(publish("автор", sample_content() + "первая"), 0U);
+  ASSERT_NE(publish("автор", sample_content() + "вторая"), 0U);
+  ASSERT_NE(publish("автор", sample_content() + "третья"), 0U);
+
+  ConnectionProxy proxy;
+  ASSERT_TRUE(proxy.start(m_server.port()));
+
+  const auto trust = load_server_trust(m_server.certificate());
+  ASSERT_TRUE(trust.has_value());
+
+  HttpTransport transport{Endpoint{.host = "127.0.0.1", .port = proxy.port()}, trust.value()};
+
+  const auto listing = transport.catalog(0, 3);
+  ASSERT_TRUE(listing.has_value());
+  ASSERT_EQ(listing->records.size(), 3U);
+
+  constexpr std::size_t k_workers = 6;
+  constexpr std::size_t k_rounds = 8;
+  std::atomic<unsigned> mismatched{0};
+
+  std::vector<std::thread> workers;
+  workers.reserve(k_workers);
+
+  for (std::size_t worker = 0; worker < k_workers; ++worker) {
+    workers.emplace_back([&transport, &listing, &mismatched, worker] {
+      for (std::size_t round = 0; round < k_rounds; ++round) {
+        const std::size_t index = (worker + round) % listing->records.size();
+        const auto page = transport.catalog(index, 1);
+
+        if (!page.has_value() || page->request.offset != index || page->total != listing->total ||
+            page->records.size() != 1U ||
+            page->records.front().publication_id != listing->records[index].publication_id) {
+          mismatched.fetch_add(1);
+        }
+      }
+    });
+  }
+
+  for (std::thread &worker : workers) {
+    worker.join();
+  }
+
+  EXPECT_EQ(mismatched.load(), 0U) << "одновременные вызовы получили чужие ответы";
+  EXPECT_EQ(proxy.accepted(), 1U) << "одновременные вызовы открыли несколько соединений";
 }
 
 } // namespace

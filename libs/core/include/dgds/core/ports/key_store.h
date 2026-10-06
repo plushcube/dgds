@@ -5,6 +5,7 @@
 #include <dgds/core/models/crypto.h>
 #include <dgds/core/models/errors.h>
 #include <dgds/core/models/identity.h>
+#include <dgds/core/models/mark.h>
 
 namespace dgds::core {
 
@@ -23,6 +24,8 @@ public:
                                                   Content associated_data) = 0;
   [[nodiscard]] virtual Result<SealedContent> wrap(const ContentIdentity &identity, const SymmetricKey &purchase_key,
                                                    Content associated_data) = 0;
+  [[nodiscard]] virtual Result<Mark> seal_mark(const ContentIdentity &identity, PurchaseId purchase_id) = 0;
+  [[nodiscard]] virtual Result<bool> verify_mark(const ContentIdentity &identity, const Mark &mark) = 0;
 };
 
 } // namespace dgds::core

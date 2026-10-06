@@ -36,6 +36,7 @@ public:
   [[nodiscard]] core::Result<void> save_receipt(const core::ReceiptRecord &record) override;
   [[nodiscard]] core::Result<core::ReceiptRecord> find_receipt(const core::PurchaseId &purchase_id,
                                                                const core::DevicePublicKey &device_key) override;
+  [[nodiscard]] core::Result<bool> has_receipt(const core::PurchaseId &purchase_id) override;
 
 private:
   [[nodiscard]] std::filesystem::path users_dir() const { return m_root / k_users_directory; }

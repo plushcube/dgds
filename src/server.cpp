@@ -91,9 +91,11 @@ int main(int argc, char *argv[]) {
   dgds::server::PublicationService publications{*ports.p_identities, *ports.p_keys, *ports.p_blobs, *ports.p_metadata};
   dgds::server::PurchaseService purchases{*ports.p_keys, *ports.p_metadata};
   dgds::server::DeliveryService delivery{*ports.p_blobs, *ports.p_keys, *ports.p_metadata};
+  dgds::server::AttributionService attribution{*ports.p_metadata, *ports.p_keys};
   dgds::server::RateLimiter limiter{
       dgds::server::RateLimit{.calls = configuration.rate_limit, .window = k_rate_window}};
-  dgds::server::api::Surface surface{users, sessions, catalog, publications, purchases, delivery, limiter, wall_clock};
+  dgds::server::api::Surface surface{users,    sessions,    catalog, publications, purchases,
+                                     delivery, attribution, limiter, wall_clock};
 
   httplib::SSLServer server{tls->certificate.c_str(), tls->key.c_str()};
 

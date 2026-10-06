@@ -4,6 +4,7 @@
 #include <dgds/core/identity/content_identity.h>
 #include <dgds/core/identity/identifier.h>
 #include <dgds/core/signature/author_signature.h>
+#include <dgds/core/watermark/mark_channel.h>
 
 #include <cstddef>
 #include <cstring>
@@ -30,6 +31,10 @@ core::Result<core::PublicationRecord> PublicationService::publish(const core::Us
 
   if (!author.has_value()) {
     return std::unexpected(author.error());
+  }
+
+  if (!core::is_channel_domain(draft.content)) {
+    return std::unexpected(core::CoreError::content_outside_channel_domain);
   }
 
   const core::CanonicalForm canonical = core::canonical_form(draft.content);

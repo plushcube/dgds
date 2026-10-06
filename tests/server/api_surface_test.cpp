@@ -1,6 +1,7 @@
 #include <dgds/server/api/errors.h>
 #include <dgds/server/api/surface.h>
 #include <dgds/server/middleware/rate_limiter.h>
+#include <dgds/server/services/attribution_service.h>
 #include <dgds/server/services/catalog_service.h>
 #include <dgds/server/services/delivery_service.h>
 #include <dgds/server/services/publication_service.h>
@@ -13,9 +14,12 @@
 #include <dgds/core/envelope/receipt.h>
 #include <dgds/core/identity/canonical_form.h>
 #include <dgds/core/identity/content_identity.h>
+#include <dgds/core/identity/identifier.h>
 #include <dgds/core/identity/user_id.h>
+#include <dgds/core/models/mark.h>
 #include <dgds/core/models/protocol.h>
 #include <dgds/core/signature/author_signature.h>
+#include <dgds/core/watermark/mark_channel.h>
 #include <dgds/stubs/blob_store/file_blob_store.h>
 #include <dgds/stubs/identity_registry/file_identity_registry.h>
 #include <dgds/stubs/key_store/file_key_store.h>
@@ -46,9 +50,13 @@ using dgds::core::canonical_form;
 using dgds::core::content_identity;
 using dgds::core::CoreError;
 using dgds::core::DeviceEnvelope;
+using dgds::core::embed_mark;
 using dgds::core::generate_author_key;
 using dgds::core::generate_device_key;
+using dgds::core::generate_identifier;
+using dgds::core::k_mark_version;
 using dgds::core::k_package_version;
+using dgds::core::Mark;
 using dgds::core::open_package;
 using dgds::core::open_receipt_key;
 using dgds::core::Package;
@@ -58,6 +66,7 @@ using dgds::core::SealedContent;
 using dgds::core::sign_author;
 using dgds::core::to_hex;
 using dgds::core::UserId;
+using dgds::server::AttributionService;
 using dgds::server::CatalogService;
 using dgds::server::DeliveryService;
 using dgds::server::LimitedOperation;
@@ -225,6 +234,40 @@ protected:
                                     : std::string{};
   }
 
+  void deliver_text(const std::string &buyer_credentials, const std::string &publication_id, std::string &purchase_id,
+                    std::string &text) {
+    const auto device = generate_device_key();
+    ASSERT_TRUE(device.has_value());
+
+    const std::string device_key = to_hex(device->public_key.data(), device->public_key.size());
+
+    const auto receipt = response_of(m_surface.buy(request_of(Json{{"credentials", Json::parse(buyer_credentials)},
+                                                                   {"publication_id", publication_id},
+                                                                   {"device_key", device_key}})));
+    ASSERT_TRUE(receipt.contains("data")) << receipt.dump();
+
+    purchase_id = receipt.at("data").at("header").at("purchase_id").get<std::string>();
+
+    const auto fetched = response_of(m_surface.fetch_package(request_of(Json{
+        {"credentials", Json::parse(buyer_credentials)}, {"purchase_id", purchase_id}, {"device_key", device_key}})));
+    ASSERT_TRUE(fetched.contains("data")) << fetched.dump();
+
+    const std::string_view line = k_text.substr(0, k_text.size() - 1);
+    EXPECT_EQ(canonical_form(fetched.dump()).find(line), std::string::npos)
+        << "в ответе выдачи не должно быть открытого текста";
+    EXPECT_NE(canonical_form(fetched.dump()).find(fetched.at("data").at("author_name").get<std::string>()),
+              std::string::npos)
+        << "проверка отсутствия открытого текста была бы пустой: нелатинский текст в ответе не экранируется";
+
+    const auto receipt_key = open_receipt_key(receipt_of(receipt.at("data")), device->private_key);
+    ASSERT_TRUE(receipt_key.has_value());
+
+    const auto content = open_package(package_of(fetched.at("data")), receipt_key.value());
+    ASSERT_TRUE(content.has_value());
+
+    text = std::string(content->view());
+  }
+
   std::filesystem::path m_root;
   FileIdentityRegistry m_identities{m_root / "identities"};
   FileKeyStore m_keys{m_root / "master.key", m_root / "keys"};
@@ -236,11 +279,13 @@ protected:
   PublicationService m_publications{m_identities, m_keys, m_blobs, m_metadata};
   PurchaseService m_purchases{m_keys, m_metadata};
   DeliveryService m_delivery{m_blobs, m_keys, m_metadata};
+  AttributionService m_attribution{m_metadata, m_keys};
 
   dgds::core::Timestamp m_now = 1700000000;
   RateLimiter m_limiter;
-  Surface m_surface{m_users,     m_sessions, m_catalog, m_publications,
-                    m_purchases, m_delivery, m_limiter, [this]() { return m_now; }};
+  Surface m_surface{m_users,        m_sessions,  m_catalog,
+                    m_publications, m_purchases, m_delivery,
+                    m_attribution,  m_limiter,   [this]() { return m_now; }};
 
 private:
   static inline std::atomic<unsigned> counter{0};
@@ -280,6 +325,54 @@ TEST_F(SurfaceTest, RejectsDraftFieldOutsideAllowedLength) {
   const auto rejected = response_of(m_surface.publish(request_of(request)));
 
   EXPECT_EQ(rejected.at("error").at("code").get<std::string>(), "request_malformed");
+}
+
+TEST_F(SurfaceTest, RejectsDraftFileNameOutsideAllowedLength) {
+  const std::string credentials = credentials_of(account_of("автор"));
+
+  const Json request{
+      {"credentials", Json::parse(credentials)},
+      {"draft", Json{{"title", std::string(k_title)}, {"file_name", std::string(257, 'x')}, {"content", "текст"}}},
+      {"author_key", std::string(64, 'a')},
+      {"signature", std::string(128, 'b')}};
+
+  const auto rejected = response_of(m_surface.publish(request_of(request)));
+
+  EXPECT_EQ(rejected.at("error").at("code").get<std::string>(), "request_malformed");
+
+  const auto catalog = response_of(m_surface.catalog(request_of(Json::object())));
+  ASSERT_TRUE(catalog.contains("data")) << catalog.dump();
+  EXPECT_EQ(catalog.at("data").at("total").get<std::string>(), "0")
+      << "отвергнутый черновик не должен становиться публикацией";
+}
+
+TEST_F(SurfaceTest, RejectsContentOutsideChannelDomain) {
+  const std::string credentials = credentials_of(account_of("автор"));
+  const std::string content = std::string("\xC0\x80") + "строка текста";
+
+  const std::string body = "{\"version\":1,\"credentials\":" + credentials +
+                           ",\"draft\":{\"title\":\"текст\",\"file_name\":\"файл.txt\",\"content\":\"" + content +
+                           "\"},\"author_key\":\"" + std::string(64, 'a') + "\",\"signature\":\"" +
+                           std::string(128, 'b') + "\"}";
+
+  const auto rejected = response_of(m_surface.publish(body));
+
+  EXPECT_EQ(rejected.at("error").at("code").get<std::string>(), "request_malformed");
+
+  const auto identity = content_identity(content);
+
+  ASSERT_TRUE(identity.has_value());
+  EXPECT_EQ(m_identities.claim(identity.value()).value(), dgds::core::ClaimOutcome::claimed)
+      << "идентификатор отвергнутого контента не должен быть захвачен";
+}
+
+TEST_F(SurfaceTest, PublishesValidTextRegardlessOfChannelFit) {
+  const std::string credentials = credentials_of(account_of("автор"));
+  const std::string short_text = "короткий корректный текст";
+
+  EXPECT_FALSE(publish_text(credentials, "автор", short_text).empty());
+  EXPECT_TRUE(dgds::core::has_mark_channel(std::string(200, 'x')));
+  EXPECT_FALSE(dgds::core::has_mark_channel(short_text)) << "короткий текст не вмещает метку, но остаётся допустимым";
 }
 
 TEST_F(SurfaceTest, RejectsContentLargerThanLimit) {
@@ -537,8 +630,9 @@ TEST_F(SurfaceTest, DistinguishesErrorKinds) {
 
 TEST_F(SurfaceTest, RefusesExcessPublications) {
   RateLimiter limiter{RateLimit{.calls = 2, .window = 60}};
-  Surface surface{m_users,     m_sessions, m_catalog, m_publications,
-                  m_purchases, m_delivery, limiter,   [this]() { return m_now; }};
+  Surface surface{m_users,        m_sessions,  m_catalog,
+                  m_publications, m_purchases, m_delivery,
+                  m_attribution,  limiter,     [this]() { return m_now; }};
 
   const std::string author_credentials = credentials_of(account_of("автор"));
   const std::string buyer_credentials = credentials_of(account_of("покупатель"));
@@ -576,8 +670,9 @@ TEST_F(SurfaceTest, RefusesExcessPublications) {
 
 TEST_F(SurfaceTest, RefusesExcessDeliveries) {
   RateLimiter limiter{RateLimit{.calls = 2, .window = 60}};
-  Surface surface{m_users,     m_sessions, m_catalog, m_publications,
-                  m_purchases, m_delivery, limiter,   [this]() { return m_now; }};
+  Surface surface{m_users,        m_sessions,  m_catalog,
+                  m_publications, m_purchases, m_delivery,
+                  m_attribution,  limiter,     [this]() { return m_now; }};
 
   const std::string author_credentials = credentials_of(account_of("автор"));
   const std::string buyer_credentials = credentials_of(account_of("покупатель"));
@@ -900,6 +995,101 @@ TEST_F(SurfaceTest, RejectsWindowValuesOutsideAllowedRange) {
       body.erase("limit");
     }
   }
+}
+
+TEST_F(SurfaceTest, AttributesDeliveredTextToPurchase) {
+  const std::string author_credentials = credentials_of(account_of("автор"));
+  const std::string buyer_account = account_of("покупатель");
+  const std::string buyer_credentials = credentials_of(buyer_account);
+
+  const std::string publication_id = publish_text(author_credentials, "автор", long_text());
+  ASSERT_FALSE(publication_id.empty());
+
+  std::string purchase_id;
+  std::string delivered;
+  deliver_text(buyer_credentials, publication_id, purchase_id, delivered);
+  ASSERT_FALSE(purchase_id.empty());
+  ASSERT_FALSE(delivered.empty());
+
+  const auto attributed = response_of(
+      m_surface.attribute(request_of(Json{{"credentials", Json::parse(buyer_credentials)}, {"text", delivered}})));
+
+  ASSERT_TRUE(attributed.contains("data")) << attributed.dump();
+
+  const Json &data = attributed.at("data");
+  EXPECT_EQ(data.at("kind").get<std::string>(), "purchase");
+  EXPECT_EQ(data.at("context_id").get<std::string>(), purchase_id);
+  EXPECT_EQ(data.at("user_id").get<std::string>(), Json::parse(buyer_account).at("user_id").get<std::string>());
+  EXPECT_EQ(data.at("user_name").get<std::string>(), "покупатель");
+  EXPECT_EQ(data.at("publication_id").get<std::string>(), publication_id);
+  EXPECT_EQ(data.at("title").get<std::string>(), std::string(k_title));
+  EXPECT_EQ(data.at("granted_at").get<dgds::core::Timestamp>(), m_now);
+}
+
+TEST_F(SurfaceTest, DistinguishesContentMismatchFromUnknownPurchase) {
+  const std::string author_credentials = credentials_of(account_of("автор"));
+  const std::string buyer_credentials = credentials_of(account_of("покупатель"));
+
+  const std::string publication_id = publish_text(author_credentials, "автор", long_text());
+  ASSERT_FALSE(publication_id.empty());
+
+  std::string purchase_id;
+  std::string delivered;
+  deliver_text(buyer_credentials, publication_id, purchase_id, delivered);
+  ASSERT_FALSE(purchase_id.empty());
+  ASSERT_FALSE(delivered.empty());
+
+  const std::string edited = delivered + "строка, дописанная после выдачи\n";
+
+  const auto mismatched = response_of(
+      m_surface.attribute(request_of(Json{{"credentials", Json::parse(buyer_credentials)}, {"text", edited}})));
+
+  ASSERT_TRUE(mismatched.contains("error")) << mismatched.dump();
+  EXPECT_EQ(mismatched.at("error").at("code").get<std::string>(), std::string(code_of(CoreError::content_mismatch)));
+
+  const auto unknown_id = generate_identifier();
+  ASSERT_TRUE(unknown_id.has_value());
+
+  const Mark unknown{.purchase_id = unknown_id.value(), .code = {}, .version = k_mark_version};
+  const auto marked = embed_mark(long_text(), unknown);
+  ASSERT_TRUE(marked.has_value());
+
+  const auto missing = response_of(
+      m_surface.attribute(request_of(Json{{"credentials", Json::parse(buyer_credentials)}, {"text", marked.value()}})));
+
+  ASSERT_TRUE(missing.contains("error")) << missing.dump();
+  EXPECT_EQ(missing.at("error").at("code").get<std::string>(), std::string(code_of(CoreError::purchase_not_found)));
+
+  EXPECT_NE(mismatched.at("error").at("code").get<std::string>(), missing.at("error").at("code").get<std::string>())
+      << "подделанный текст и неизвестная покупка должны различаться";
+}
+
+TEST_F(SurfaceTest, RefusesUnauthorizedAttribution) {
+  const std::string buyer_credentials = credentials_of(account_of("покупатель"));
+
+  Json forged = Json::parse(buyer_credentials);
+  forged["token"] = "поддельный";
+
+  const auto rejected =
+      response_of(m_surface.attribute(request_of(Json{{"credentials", forged}, {"text", long_text()}})));
+
+  ASSERT_TRUE(rejected.contains("error")) << rejected.dump();
+  EXPECT_EQ(rejected.at("error").at("code").get<std::string>(), std::string(code_of(CoreError::authorization_failed)));
+}
+
+TEST_F(SurfaceTest, RejectsAttributionWithoutText) {
+  const std::string credentials = credentials_of(account_of("покупатель"));
+
+  const auto missing = response_of(m_surface.attribute(request_of(Json{{"credentials", Json::parse(credentials)}})));
+
+  ASSERT_TRUE(missing.contains("error")) << missing.dump();
+  EXPECT_EQ(missing.at("error").at("code").get<std::string>(), "request_malformed");
+
+  const auto empty =
+      response_of(m_surface.attribute(request_of(Json{{"credentials", Json::parse(credentials)}, {"text", ""}})));
+
+  ASSERT_TRUE(empty.contains("error")) << empty.dump();
+  EXPECT_EQ(empty.at("error").at("code").get<std::string>(), "request_malformed");
 }
 
 } // namespace

@@ -28,6 +28,9 @@ public:
 
 private:
   [[nodiscard]] core::Result<core::Receipt>
+  receipt_for(const core::PurchaseRecord &purchase, const core::DevicePublicKey &device_key, core::Timestamp issued_at);
+
+  [[nodiscard]] core::Result<core::Receipt>
   issue_receipt(const core::PurchaseId &context_id, const core::UserId &user_id,
                 const core::PublicationRecord &publication, core::Timestamp granted_at,
                 const core::DevicePublicKey &device_key, core::Timestamp issued_at);

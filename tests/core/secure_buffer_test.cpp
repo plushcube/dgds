@@ -1,21 +1,30 @@
 #include <dgds/core/crypto/secure_buffer.h>
 
+#include <sys/mman.h>
+
 #include <gtest/gtest.h>
+
+#include <unistd.h>
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <string>
 #include <utility>
 
 namespace {
 
+using dgds::core::DumpPrevention;
+using dgds::core::MemoryLock;
 using dgds::core::SecureBuffer;
 
 constexpr const char k_secret[] = "секрет";
 constexpr std::size_t k_secret_size = sizeof(k_secret) - 1;
 
 void fill(SecureBuffer &buffer) { std::memcpy(buffer.data(), k_secret, k_secret_size); }
+
+std::size_t page_size() { return static_cast<std::size_t>(::sysconf(_SC_PAGESIZE)); }
 
 TEST(SecureBuffer, KeepsContentUntilWipe) {
   SecureBuffer buffer(k_secret_size);
@@ -42,6 +51,28 @@ TEST(SecureBuffer, HandsContentOverByMove) {
 
   EXPECT_EQ(consumer(std::move(buffer)), k_secret);
   EXPECT_TRUE(buffer.empty());
+}
+
+TEST(SecureBuffer, ProtectsPageAlignedRange) {
+  SecureBuffer buffer(k_secret_size);
+
+  EXPECT_EQ(reinterpret_cast<std::uintptr_t>(buffer.data()) % page_size(), 0U);
+  EXPECT_EQ(buffer.protection().lock, MemoryLock::locked);
+
+#if defined(MADV_DONTDUMP)
+  EXPECT_EQ(buffer.protection().dump, DumpPrevention::applied);
+#else
+  EXPECT_EQ(buffer.protection().dump, DumpPrevention::unsupported);
+#endif
+}
+
+TEST(SecureBuffer, ReportsReleaseOutcome) {
+  SecureBuffer buffer(k_secret_size);
+  fill(buffer);
+
+  EXPECT_EQ(buffer.close(), MemoryLock::locked);
+  EXPECT_TRUE(buffer.empty());
+  EXPECT_EQ(buffer.close(), MemoryLock::locked);
 }
 
 } // namespace

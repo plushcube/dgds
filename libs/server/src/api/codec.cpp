@@ -153,6 +153,16 @@ Json package_json(const core::Package &value) {
               {"signature", hex_of(value.signature)}};
 }
 
+Json attribution_json(const Attribution &value) {
+  return Json{{"kind", value.kind == AccessKind::purchase ? "purchase" : "author"},
+              {"context_id", std::to_string(value.context_id)},
+              {"user_id", core::to_uuid(value.user_id)},
+              {"user_name", value.user_name},
+              {"publication_id", std::to_string(value.publication_id)},
+              {"title", value.title},
+              {"granted_at", value.granted_at}};
+}
+
 } // namespace
 
 std::optional<std::uint8_t> read_version(core::Content body) {
@@ -220,6 +230,22 @@ std::optional<core::ContentBuffer> read_name(core::Content body) {
   }
 
   return name.value();
+}
+
+std::optional<core::ContentBuffer> read_text(core::Content body) {
+  const auto parsed = parse(body);
+
+  if (!parsed.has_value()) {
+    return std::nullopt;
+  }
+
+  const auto text = read_string(parsed.value(), "text");
+
+  if (!text.has_value() || text->empty()) {
+    return std::nullopt;
+  }
+
+  return text.value();
 }
 
 std::optional<core::PublicationDraft> read_draft(core::Content body) {
@@ -372,6 +398,7 @@ std::string encode(const core::Receipt &receipt) { return receipt_json(receipt).
 std::string encode(const core::Package &package) { return package_json(package).dump(); }
 
 std::string encode(const core::ContentIdentity &identity) { return Json(hex_of(identity)).dump(); }
+std::string encode(const Attribution &attribution) { return attribution_json(attribution).dump(); }
 
 std::string encode_id(core::PurchaseId id) { return Json(std::to_string(id)).dump(); }
 

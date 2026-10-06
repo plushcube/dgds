@@ -1,9 +1,9 @@
 #pragma once
 
+#include <dgds/core/crypto/memory_protection.h>
 #include <dgds/core/models/content.h>
 
 #include <cstddef>
-#include <string>
 
 namespace dgds::core {
 
@@ -18,17 +18,23 @@ public:
 
   void wipe();
 
-  [[nodiscard]] unsigned char *data() { return reinterpret_cast<unsigned char *>(m_data.data()); }
-  [[nodiscard]] const unsigned char *data() const { return reinterpret_cast<const unsigned char *>(m_data.data()); }
-  [[nodiscard]] Content view() const { return Content(m_data.data(), m_data.size()); }
-  [[nodiscard]] std::size_t size() const { return m_data.size(); }
-  [[nodiscard]] bool empty() const { return m_data.empty(); }
+  [[nodiscard]] MemoryLock close();
+
+  [[nodiscard]] MemoryProtection protection() const { return m_protection; }
+  [[nodiscard]] unsigned char *data() { return m_data; }
+  [[nodiscard]] const unsigned char *data() const { return m_data; }
+  [[nodiscard]] Content view() const { return Content(reinterpret_cast<const char *>(m_data), m_size); }
+  [[nodiscard]] std::size_t size() const { return m_size; }
+  [[nodiscard]] bool empty() const { return m_size == 0; }
 
 private:
-  void protect();
   void release();
 
-  std::string m_data;
+  unsigned char *m_data = nullptr;
+  std::size_t m_size = 0;
+  std::size_t m_protected = 0;
+  MemoryProtection m_protection{};
+  MemoryLock m_release{MemoryLock::locked};
 };
 
 } // namespace dgds::core

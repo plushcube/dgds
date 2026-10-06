@@ -2,25 +2,55 @@
 
 #include <openssl/crypto.h>
 
-#include <sys/mman.h>
+#include <unistd.h>
 
 #include <cstddef>
-#include <utility>
+#include <new>
 
 namespace dgds::core {
+namespace {
 
-SecureBuffer::SecureBuffer(std::size_t size) : m_data(size, '\0') { protect(); }
+std::size_t page_size() {
+  static const std::size_t k_page = static_cast<std::size_t>(::sysconf(_SC_PAGESIZE));
 
-SecureBuffer::SecureBuffer(SecureBuffer &&other) noexcept : m_data(std::move(other.m_data)) {
-  protect();
-  other.release();
+  return k_page;
+}
+
+std::size_t round_up(std::size_t size, std::size_t page) { return ((size + page - 1) / page) * page; }
+
+} // namespace
+
+SecureBuffer::SecureBuffer(std::size_t size) : m_size(size), m_protected(round_up(size, page_size())) {
+  if (m_protected != 0) {
+    m_data = static_cast<unsigned char *>(::operator new(m_protected, std::align_val_t{page_size()}));
+  }
+
+  m_protection = protect_memory(m_data, m_protected);
+}
+
+SecureBuffer::SecureBuffer(SecureBuffer &&other) noexcept
+    : m_data(other.m_data), m_size(other.m_size), m_protected(other.m_protected), m_protection(other.m_protection),
+      m_release(other.m_release) {
+  other.m_data = nullptr;
+  other.m_size = 0;
+  other.m_protected = 0;
+  other.m_release = MemoryLock::locked;
 }
 
 SecureBuffer &SecureBuffer::operator=(SecureBuffer &&other) noexcept {
   if (this != &other) {
     release();
-    m_data.swap(other.m_data);
-    protect();
+
+    m_data = other.m_data;
+    m_size = other.m_size;
+    m_protected = other.m_protected;
+    m_protection = other.m_protection;
+    m_release = other.m_release;
+
+    other.m_data = nullptr;
+    other.m_size = 0;
+    other.m_protected = 0;
+    other.m_release = MemoryLock::locked;
   }
 
   return *this;
@@ -29,31 +59,28 @@ SecureBuffer &SecureBuffer::operator=(SecureBuffer &&other) noexcept {
 SecureBuffer::~SecureBuffer() { release(); }
 
 void SecureBuffer::wipe() {
-  if (m_data.capacity() > 0) {
-    OPENSSL_cleanse(m_data.data(), m_data.capacity());
+  if (m_data != nullptr) {
+    OPENSSL_cleanse(m_data, m_protected);
   }
 }
 
-void SecureBuffer::protect() {
-  if (m_data.empty()) {
-    return;
-  }
+MemoryLock SecureBuffer::close() {
+  release();
 
-  ::mlock(m_data.data(), m_data.size());
-
-#if defined(MADV_DONTDUMP)
-  ::madvise(m_data.data(), m_data.size(), MADV_DONTDUMP);
-#endif
+  return m_release;
 }
 
 void SecureBuffer::release() {
-  wipe();
-
-  if (!m_data.empty()) {
-    ::munlock(m_data.data(), m_data.size());
+  if (m_data == nullptr) {
+    return;
   }
 
-  m_data.clear();
+  wipe();
+  m_release = release_memory(m_data, m_protected);
+  ::operator delete(m_data, std::align_val_t{page_size()});
+  m_data = nullptr;
+  m_size = 0;
+  m_protected = 0;
 }
 
 } // namespace dgds::core

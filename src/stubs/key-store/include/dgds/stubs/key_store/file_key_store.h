@@ -23,6 +23,9 @@ public:
   [[nodiscard]] core::Result<core::SealedContent> wrap(const core::ContentIdentity &identity,
                                                        const core::SymmetricKey &purchase_key,
                                                        core::Content associated_data) override;
+  [[nodiscard]] core::Result<core::Mark> seal_mark(const core::ContentIdentity &identity,
+                                                   core::PurchaseId purchase_id) override;
+  [[nodiscard]] core::Result<bool> verify_mark(const core::ContentIdentity &identity, const core::Mark &mark) override;
 
 private:
   [[nodiscard]] std::filesystem::path path_of(const core::ContentIdentity &identity) const {
@@ -33,6 +36,7 @@ private:
   [[nodiscard]] core::Result<core::SymmetricKey> create_master_key() const;
   [[nodiscard]] core::Result<core::SymmetricKey> load_file_key(const core::ContentIdentity &identity) const;
   [[nodiscard]] core::Result<core::SymmetricKey> obtain_file_key(const core::ContentIdentity &identity) const;
+  [[nodiscard]] core::Result<core::SymmetricKey> obtain_mark_key() const;
 
   static constexpr const char *k_key_suffix = ".key";
 

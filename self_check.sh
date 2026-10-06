@@ -37,12 +37,23 @@ if ! ./check_layers.sh; then
 fi
 
 echo "  Building..."
-cmake -S . -B .build >/dev/null
-cmake --build .build --parallel >/dev/null
+if ! cmake -S . -B .build >/dev/null; then
+    echo "❌ Configure failed."
+    exit 1
+fi
+
+if ! cmake --build .build --parallel >/dev/null; then
+    echo "❌ Build failed."
+    exit 1
+fi
 
 echo "  Testing..."
-if ! ctest --test-dir .build --output-on-failure >/dev/null; then
+test_log=$(mktemp)
+trap 'rm -f "$test_log"' EXIT
+
+if ! ctest --test-dir .build --output-on-failure >"$test_log" 2>&1; then
     echo "❌ Tests failed."
+    cat "$test_log"
     exit 1
 fi
 
