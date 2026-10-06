@@ -42,6 +42,7 @@ public:
   [[nodiscard]] virtual Result<void> save_receipt(const ReceiptRecord &record) = 0;
   [[nodiscard]] virtual Result<ReceiptRecord> find_receipt(const PurchaseId &purchase_id,
                                                            const DevicePublicKey &device_key) = 0;
+  [[nodiscard]] virtual Result<bool> has_receipt(const PurchaseId &purchase_id) = 0;
 };
 
 } // namespace dgds::core

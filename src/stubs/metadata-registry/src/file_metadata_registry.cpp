@@ -424,4 +424,22 @@ core::Result<core::ReceiptRecord> FileMetadataRegistry::find_receipt(const core:
   return record;
 }
 
+core::Result<bool> FileMetadataRegistry::has_receipt(const core::PurchaseId &purchase_id) {
+  const auto files = list_files(m_root / k_receipts_directory);
+
+  if (!files.has_value()) {
+    return std::unexpected(files.error());
+  }
+
+  const std::string prefix = std::to_string(purchase_id) + "-";
+
+  for (const auto &file : files.value()) {
+    if (file.filename().string().rfind(prefix, 0) == 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 } // namespace dgds::stubs

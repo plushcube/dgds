@@ -11,27 +11,39 @@
 #include <expected>
 
 namespace dgds::server {
-namespace {
 
-core::Result<core::Receipt> existing_receipt(core::MetadataRegistry &metadata, const core::UserId &user_id,
-                                             const core::PublicationId &publication_id,
-                                             const core::DevicePublicKey &device_key) {
-  const auto purchase = metadata.find_purchase_of(user_id, publication_id);
+core::Result<core::Receipt> PurchaseService::receipt_for(const core::PurchaseRecord &purchase,
+                                                         const core::DevicePublicKey &device_key,
+                                                         core::Timestamp issued_at) {
+  const auto stored = m_metadata.find_receipt(purchase.purchase_id, device_key);
 
-  if (!purchase.has_value()) {
-    return std::unexpected(purchase.error());
+  if (stored.has_value()) {
+    return stored->receipt;
   }
 
-  const auto stored = metadata.find_receipt(purchase->purchase_id, device_key);
-
-  if (!stored.has_value()) {
+  if (stored.error() != core::CoreError::receipt_not_found) {
     return std::unexpected(stored.error());
   }
 
-  return stored->receipt;
-}
+  const auto any = m_metadata.has_receipt(purchase.purchase_id);
 
-} // namespace
+  if (!any.has_value()) {
+    return std::unexpected(any.error());
+  }
+
+  if (any.value()) {
+    return std::unexpected(core::CoreError::receipt_not_found);
+  }
+
+  const auto publication = m_metadata.find_publication(purchase.publication_id);
+
+  if (!publication.has_value()) {
+    return std::unexpected(publication.error());
+  }
+
+  return issue_receipt(purchase.purchase_id, purchase.user_id, publication.value(), purchase.purchased_at, device_key,
+                       issued_at);
+}
 
 core::Result<core::Receipt> PurchaseService::buy(const core::UserId &user_id, const core::PublicationId &publication_id,
                                                  const core::DevicePublicKey &device_key,
@@ -39,13 +51,7 @@ core::Result<core::Receipt> PurchaseService::buy(const core::UserId &user_id, co
   const auto existing = m_metadata.find_purchase_of(user_id, publication_id);
 
   if (existing.has_value()) {
-    const auto stored = m_metadata.find_receipt(existing->purchase_id, device_key);
-
-    if (!stored.has_value()) {
-      return std::unexpected(stored.error());
-    }
-
-    return stored->receipt;
+    return receipt_for(existing.value(), device_key, purchased_at);
   }
 
   if (existing.error() != core::CoreError::purchase_not_found) {
@@ -87,14 +93,13 @@ core::Result<core::Receipt> PurchaseService::buy(const core::UserId &user_id, co
       return std::unexpected(added.error());
     }
 
-    const auto concurrent = existing_receipt(m_metadata, user_id, publication_id, device_key);
+    const auto concurrent = m_metadata.find_purchase_of(user_id, publication_id);
 
     if (!concurrent.has_value()) {
-      return std::unexpected(concurrent.error() == core::CoreError::purchase_not_found ? added.error()
-                                                                                       : concurrent.error());
+      return std::unexpected(concurrent.error());
     }
 
-    return concurrent.value();
+    return receipt_for(concurrent.value(), device_key, purchased_at);
   }
 
   return issue_receipt(purchase.purchase_id, purchase.user_id, publication.value(), purchase.purchased_at, device_key,

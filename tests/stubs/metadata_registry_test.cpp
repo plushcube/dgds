@@ -580,6 +580,55 @@ TEST_F(MetadataRegistryTest, KeepsReceiptOfDevice) {
   EXPECT_EQ(foreign.error(), CoreError::receipt_not_found);
 }
 
+TEST_F(MetadataRegistryTest, ReportsReceiptPresenceOfPurchase) {
+  const UserAccount account = make_user(32, "покупатель");
+  const ReceiptRecord record = make_receipt_record(111, account.user_id, 33);
+
+  ASSERT_TRUE(make_registry().add_user(account).has_value());
+  ASSERT_TRUE(make_registry().add_purchase(make_purchase(111, account.user_id, 121)).has_value());
+
+  const auto before = make_registry().has_receipt(111);
+  const auto stranger = make_registry().has_receipt(999);
+
+  ASSERT_TRUE(before.has_value());
+  EXPECT_FALSE(before.value());
+
+  ASSERT_TRUE(stranger.has_value());
+  EXPECT_FALSE(stranger.value());
+
+  ASSERT_TRUE(make_registry().save_receipt(record).has_value());
+
+  const auto after = make_registry().has_receipt(111);
+
+  ASSERT_TRUE(after.has_value());
+  EXPECT_TRUE(after.value());
+}
+
+TEST_F(MetadataRegistryTest, ReportsReceiptOfPurchaseRegardlessOfDevice) {
+  const UserAccount account = make_user(34, "покупатель");
+  const ReceiptRecord first = make_receipt_record(131, account.user_id, 35);
+  const ReceiptRecord second = make_receipt_record(131, account.user_id, 36);
+
+  ASSERT_NE(first.device_key, second.device_key);
+  ASSERT_TRUE(make_registry().add_user(account).has_value());
+  ASSERT_TRUE(make_registry().add_purchase(make_purchase(131, account.user_id, 141)).has_value());
+  ASSERT_TRUE(make_registry().save_receipt(first).has_value());
+  ASSERT_TRUE(make_registry().save_receipt(second).has_value());
+
+  const auto any = make_registry().has_receipt(131);
+  const auto by_first = make_registry().find_receipt(131, first.device_key);
+  const auto by_second = make_registry().find_receipt(131, second.device_key);
+
+  ASSERT_TRUE(any.has_value());
+  EXPECT_TRUE(any.value());
+
+  ASSERT_TRUE(by_first.has_value());
+  EXPECT_EQ(by_first->device_key, first.device_key);
+
+  ASSERT_TRUE(by_second.has_value());
+  EXPECT_EQ(by_second->device_key, second.device_key);
+}
+
 TEST_F(MetadataRegistryTest, OnlyOneConcurrentRegistrationOfNameSucceeds) {
   constexpr std::size_t k_thread_count = 8;
 
