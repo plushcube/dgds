@@ -1,11 +1,15 @@
 #pragma once
 
+#include <dgds/client/http/pinned_client.h>
 #include <dgds/client/http/server_trust.h>
 #include <dgds/client/models/endpoint.h>
 #include <dgds/client/ports/api_transport.h>
 #include <dgds/core/models/errors.h>
 
 #include <cstddef>
+#include <mutex>
+#include <string>
+#include <string_view>
 #include <utility>
 
 namespace dgds::client {
@@ -31,8 +35,12 @@ public:
                                               const DevicePublicKey &device_key) override;
 
 private:
+  [[nodiscard]] Result<std::string> post(std::string_view path, std::string_view payload);
+
   Endpoint m_endpoint;
   ServerTrust m_trust;
+  std::mutex m_connection_mutex;
+  HttpClient m_client;
 };
 
 } // namespace dgds::client

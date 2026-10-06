@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstring>
 #include <expected>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -26,6 +27,7 @@ using Json = nlohmann::json;
 
 constexpr int k_connect_timeout_seconds = 5;
 constexpr int k_read_timeout_seconds = 30;
+constexpr int k_connection_attempts = 2;
 
 using Bytes = std::vector<std::uint8_t>;
 
@@ -347,26 +349,18 @@ template <std::size_t Size>
                        .signature = signature.value()};
 }
 
-[[nodiscard]] core::Result<Json> exchange(const Endpoint &endpoint, const ServerTrust &trust, std::string_view path,
-                                          Json body) {
+[[nodiscard]] std::string request_body(Json body) {
   body["version"] = core::k_protocol_version;
 
-  const auto client = make_pinned_client(endpoint, trust);
+  return body.dump();
+}
 
-  if (!client.has_value()) {
-    return std::unexpected(client.error());
+[[nodiscard]] core::Result<Json> parsed_response(const core::Result<std::string> &body) {
+  if (!body.has_value()) {
+    return std::unexpected(body.error());
   }
 
-  (*client)->set_connection_timeout(k_connect_timeout_seconds);
-  (*client)->set_read_timeout(k_read_timeout_seconds);
-
-  const httplib::Result response = (*client)->Post(std::string(path), body.dump(), "application/json");
-
-  if (!response) {
-    return std::unexpected(core::CoreError::connection_failed);
-  }
-
-  const Json parsed = Json::parse(response->body, nullptr, false);
+  const Json parsed = Json::parse(body.value(), nullptr, false);
 
   if (parsed.is_discarded() || !parsed.is_object()) {
     return std::unexpected(core::CoreError::protocol_failure);
@@ -443,8 +437,39 @@ template <typename Summary, typename Decode>
 
 } // namespace
 
+core::Result<std::string> HttpTransport::post(std::string_view path, std::string_view payload) {
+  const std::lock_guard<std::mutex> guard(m_connection_mutex);
+
+  for (int attempt = 0; attempt < k_connection_attempts; ++attempt) {
+    if (!m_client) {
+      auto client = make_pinned_client(m_endpoint, m_trust);
+
+      if (!client.has_value()) {
+        return std::unexpected(client.error());
+      }
+
+      (*client)->set_connection_timeout(k_connect_timeout_seconds);
+      (*client)->set_read_timeout(k_read_timeout_seconds);
+      (*client)->set_keep_alive(true);
+
+      m_client = std::move(client.value());
+    }
+
+    const httplib::Result response = m_client->Post(std::string(path), std::string(payload), "application/json");
+
+    if (!response) {
+      m_client.reset();
+      continue;
+    }
+
+    return response->body;
+  }
+
+  return std::unexpected(core::CoreError::connection_failed);
+}
+
 Result<UserAccount> HttpTransport::register_user(Content name) {
-  const auto data = exchange(m_endpoint, m_trust, "/register", Json{{"name", std::string(name)}});
+  const auto data = parsed_response(post("/register", request_body(Json{{"name", std::string(name)}})));
 
   if (!data.has_value()) {
     return std::unexpected(data.error());
@@ -454,7 +479,7 @@ Result<UserAccount> HttpTransport::register_user(Content name) {
 }
 
 Result<Credentials> HttpTransport::log_in(Content name) {
-  const auto data = exchange(m_endpoint, m_trust, "/login", Json{{"name", std::string(name)}});
+  const auto data = parsed_response(post("/login", request_body(Json{{"name", std::string(name)}})));
 
   if (!data.has_value()) {
     return std::unexpected(data.error());
@@ -465,7 +490,7 @@ Result<Credentials> HttpTransport::log_in(Content name) {
 
 Result<core::PublicationSummaryPage> HttpTransport::catalog(std::size_t offset, std::size_t limit) {
   const Json body{{"offset", std::to_string(offset)}, {"limit", std::to_string(limit)}};
-  const auto data = exchange(m_endpoint, m_trust, "/catalog", body);
+  const auto data = parsed_response(post("/catalog", request_body(body)));
 
   if (!data.has_value()) {
     return std::unexpected(data.error());
@@ -481,7 +506,7 @@ Result<PublicationId> HttpTransport::publish(const Credentials &credentials, con
                   {"author_key", hex_json(author_key)},
                   {"signature", hex_json(signature)}};
 
-  const auto data = exchange(m_endpoint, m_trust, "/publish", body);
+  const auto data = parsed_response(post("/publish", request_body(body)));
 
   if (!data.has_value()) {
     return std::unexpected(data.error());
@@ -500,7 +525,7 @@ Result<Receipt> HttpTransport::buy(const Credentials &credentials, const Publica
                   {"publication_id", std::to_string(publication_id)},
                   {"device_key", hex_json(device_key)}};
 
-  const auto data = exchange(m_endpoint, m_trust, "/buy", body);
+  const auto data = parsed_response(post("/buy", request_body(body)));
 
   if (!data.has_value()) {
     return std::unexpected(data.error());
@@ -514,7 +539,7 @@ Result<core::PurchaseSummaryPage> HttpTransport::purchases(const Credentials &cr
   const Json body{{"credentials", credentials_json(credentials)},
                   {"offset", std::to_string(offset)},
                   {"limit", std::to_string(limit)}};
-  const auto data = exchange(m_endpoint, m_trust, "/purchases", body);
+  const auto data = parsed_response(post("/purchases", request_body(body)));
 
   if (!data.has_value()) {
     return std::unexpected(data.error());
@@ -529,7 +554,7 @@ Result<Receipt> HttpTransport::restore_receipt(const Credentials &credentials, c
                   {"purchase_id", std::to_string(purchase_id)},
                   {"device_key", hex_json(device_key)}};
 
-  const auto data = exchange(m_endpoint, m_trust, "/restore-receipt", body);
+  const auto data = parsed_response(post("/restore-receipt", request_body(body)));
 
   if (!data.has_value()) {
     return std::unexpected(data.error());
@@ -541,7 +566,7 @@ Result<Receipt> HttpTransport::restore_receipt(const Credentials &credentials, c
 Result<ContentIdentity> HttpTransport::context_identity(const Credentials &credentials, const PurchaseId &context_id) {
   const Json body{{"credentials", credentials_json(credentials)}, {"context_id", std::to_string(context_id)}};
 
-  const auto data = exchange(m_endpoint, m_trust, "/context-identity", body);
+  const auto data = parsed_response(post("/context-identity", request_body(body)));
 
   if (!data.has_value()) {
     return std::unexpected(data.error());
@@ -560,7 +585,7 @@ Result<Package> HttpTransport::fetch_package(const Credentials &credentials, con
                   {"purchase_id", std::to_string(purchase_id)},
                   {"device_key", hex_json(device_key)}};
 
-  const auto data = exchange(m_endpoint, m_trust, "/fetch-package", body);
+  const auto data = parsed_response(post("/fetch-package", request_body(body)));
 
   if (!data.has_value()) {
     return std::unexpected(data.error());
