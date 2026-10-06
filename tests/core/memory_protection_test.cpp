@@ -46,6 +46,16 @@ TEST(MemoryProtection, ClaimsNothingForEmptyRange) {
 }
 
 TEST(MemoryProtection, ReportsRefusedCalls) {
+#if defined(__linux__)
+  const std::size_t page = page_size();
+  const auto unmapped = reinterpret_cast<void *>(1);
+
+  const auto protection = protect_memory(unmapped, page);
+
+  EXPECT_EQ(protection.lock, MemoryLock::failed);
+  EXPECT_EQ(protection.dump, DumpPrevention::failed);
+  EXPECT_EQ(release_memory(unmapped, page), MemoryLock::failed);
+#else
   constexpr std::size_t k_impossible = std::numeric_limits<std::size_t>::max();
 
   const std::size_t page = page_size();
@@ -54,15 +64,11 @@ TEST(MemoryProtection, ReportsRefusedCalls) {
   const auto protection = protect_memory(data, k_impossible);
 
   EXPECT_EQ(protection.lock, MemoryLock::failed);
-
-#if defined(MADV_DONTDUMP)
-  EXPECT_EQ(protection.dump, DumpPrevention::failed);
-#else
   EXPECT_EQ(protection.dump, DumpPrevention::unsupported);
-#endif
-
   EXPECT_EQ(release_memory(data, k_impossible), MemoryLock::failed);
+
   ::operator delete(data, std::align_val_t{page});
+#endif
 }
 
 } // namespace
