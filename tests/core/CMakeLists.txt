@@ -11,6 +11,7 @@ dgds_add_test_area(
   mark_code_test.cpp
   mark_codec_test.cpp
   mark_key_test.cpp
+  memory_protection_test.cpp
   package_test.cpp
   ports_test.cpp
   receipt_test.cpp

@@ -3,6 +3,7 @@ add_library(
   "src/codec/binary.cpp"
   "src/codec/utf8.cpp"
   "src/crypto/aead.cpp"
+  "src/crypto/memory_protection.cpp"
   "src/crypto/sealed_content_codec.cpp"
   "src/crypto/secure_buffer.cpp"
   "src/envelope/device_wrap.cpp"
