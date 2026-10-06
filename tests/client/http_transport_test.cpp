@@ -149,7 +149,7 @@ public:
 
   [[nodiscard]] unsigned accepted() const { return m_accepted.load(); }
 
-  void break_next_request() { m_break.store(true); }
+  void break_next_request() { m_break_target.store(m_active_client.load()); }
 
 private:
   static void configure_socket(int fd) {
@@ -222,6 +222,7 @@ private:
 
     pollfd watched[2] = {{client, POLLIN, 0}, {upstream, POLLIN, 0}};
     char buffer[16384];
+    bool breaking = false;
 
     while (true) {
       if (::poll(watched, 2, -1) < 0) {
@@ -235,9 +236,14 @@ private:
           break;
         }
 
-        if (m_break.exchange(false)) {
+        if (m_break_target.load() == client) {
+          m_break_target.store(-1);
+          m_active_client.store(-1);
+          breaking = true;
           break;
         }
+
+        m_active_client.store(client);
 
         if (write_all(upstream, buffer, static_cast<std::size_t>(received)) != 0) {
           break;
@@ -257,6 +263,19 @@ private:
       }
     }
 
+    if (breaking) {
+      ::shutdown(client, SHUT_WR);
+
+      while (m_running.load()) {
+        pollfd readable{client, POLLIN, 0};
+        const int ready = ::poll(&readable, 1, 20);
+
+        if (ready < 0 || (ready > 0 && ::recv(client, buffer, sizeof(buffer), 0) <= 0)) {
+          break;
+        }
+      }
+    }
+
     ::shutdown(client, SHUT_RDWR);
     ::close(client);
     ::shutdown(upstream, SHUT_RDWR);
@@ -267,7 +286,8 @@ private:
   int m_port = 0;
   int m_upstream_port = 0;
   std::atomic<unsigned> m_accepted{0};
-  std::atomic<bool> m_break{false};
+  std::atomic<int> m_active_client{-1};
+  std::atomic<int> m_break_target{-1};
   std::atomic<bool> m_running{false};
   std::thread m_accept;
   std::vector<std::thread> m_workers;
