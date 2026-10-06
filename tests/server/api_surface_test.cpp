@@ -327,6 +327,25 @@ TEST_F(SurfaceTest, RejectsDraftFieldOutsideAllowedLength) {
   EXPECT_EQ(rejected.at("error").at("code").get<std::string>(), "request_malformed");
 }
 
+TEST_F(SurfaceTest, RejectsDraftFileNameOutsideAllowedLength) {
+  const std::string credentials = credentials_of(account_of("автор"));
+
+  const Json request{
+      {"credentials", Json::parse(credentials)},
+      {"draft", Json{{"title", std::string(k_title)}, {"file_name", std::string(257, 'x')}, {"content", "текст"}}},
+      {"author_key", std::string(64, 'a')},
+      {"signature", std::string(128, 'b')}};
+
+  const auto rejected = response_of(m_surface.publish(request_of(request)));
+
+  EXPECT_EQ(rejected.at("error").at("code").get<std::string>(), "request_malformed");
+
+  const auto catalog = response_of(m_surface.catalog(request_of(Json::object())));
+  ASSERT_TRUE(catalog.contains("data")) << catalog.dump();
+  EXPECT_EQ(catalog.at("data").at("total").get<std::string>(), "0")
+      << "отвергнутый черновик не должен становиться публикацией";
+}
+
 TEST_F(SurfaceTest, RejectsContentOutsideChannelDomain) {
   const std::string credentials = credentials_of(account_of("автор"));
   const std::string content = std::string("\xC0\x80") + "строка текста";

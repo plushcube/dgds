@@ -1,3 +1,4 @@
+#include <dgds/server/services/attribution_service.h>
 #include <dgds/server/services/delivery_service.h>
 #include <dgds/server/services/publication_service.h>
 #include <dgds/server/services/purchase_service.h>
@@ -48,6 +49,7 @@ using dgds::core::Result;
 using dgds::core::sign_author;
 using dgds::core::Signature;
 using dgds::core::UserAccount;
+using dgds::server::AttributionService;
 using dgds::server::DeliveryService;
 using dgds::server::PublicationService;
 using dgds::server::PurchaseService;
@@ -125,6 +127,7 @@ protected:
   PublicationService m_publications{m_identities, m_keys, m_blobs, m_metadata};
   PurchaseService m_purchases{m_keys, m_metadata};
   DeliveryService m_delivery{m_blobs, m_keys, m_metadata};
+  AttributionService m_attribution{m_metadata, m_keys};
 
 private:
   dgds::server::SessionStore m_sessions;
@@ -351,6 +354,34 @@ TEST_F(DeliveryServiceTest, SharesUnmarkedDelivery) {
   ASSERT_TRUE(content.has_value());
   EXPECT_EQ(content->view(), k_short_text);
   EXPECT_FALSE(read_marks(content->view()).has_value());
+}
+
+TEST_F(DeliveryServiceTest, RefusesAttributionForUnmarkedDelivery) {
+  const UserAccount author = register_user("автор");
+  const UserAccount buyer = register_user("покупатель");
+  const auto publication = publish(author, k_short_text);
+
+  const auto device = dgds::core::generate_device_key();
+  ASSERT_TRUE(device.has_value());
+
+  const auto receipt = m_purchases.buy(buyer.user_id, publication.publication_id, device->public_key, k_purchased_at);
+  ASSERT_TRUE(receipt.has_value());
+
+  const auto package = m_delivery.fetch_package(buyer.user_id, receipt->header.purchase_id, device->public_key);
+  ASSERT_TRUE(package.has_value());
+
+  const auto receipt_key = open_receipt_key(receipt.value(), device->private_key);
+  ASSERT_TRUE(receipt_key.has_value());
+
+  const auto content = open_package(package.value(), receipt_key.value());
+  ASSERT_TRUE(content.has_value());
+  EXPECT_EQ(content->view(), k_short_text);
+  EXPECT_FALSE(read_marks(content->view()).has_value());
+
+  const auto report = m_attribution.attribute(content->view());
+
+  ASSERT_FALSE(report.has_value());
+  EXPECT_EQ(report.error(), CoreError::mark_not_found);
 }
 
 TEST_F(DeliveryServiceTest, DeliversMarkedCopyToAuthor) {

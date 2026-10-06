@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <string_view>
 #include <unistd.h>
@@ -416,6 +417,42 @@ TEST_F(PurchaseServiceTest, RepairsPurchaseRecordWithoutReceipt) {
 
   const auto receipt_key = open_receipt_key(receipt.value(), device->private_key);
   ASSERT_TRUE(receipt_key.has_value());
+}
+
+TEST_F(PurchaseServiceTest, LeavesNoReceiptWhenReceiptWriteFails) {
+  const UserAccount author = register_user("автор");
+  const UserAccount buyer = register_user("покупатель");
+  const auto publication = publish(author, k_text);
+
+  std::ofstream(m_root / "metadata" / "receipts") << "не каталог";
+
+  const auto device = dgds::core::generate_device_key();
+  ASSERT_TRUE(device.has_value());
+
+  const auto receipt = m_purchases.buy(buyer.user_id, publication.publication_id, device->public_key, k_purchased_at);
+
+  ASSERT_FALSE(receipt.has_value());
+  EXPECT_EQ(receipt.error(), CoreError::storage_failed);
+
+  const auto purchase = m_metadata.find_purchase_of(buyer.user_id, publication.publication_id);
+  ASSERT_TRUE(purchase.has_value());
+  EXPECT_EQ(purchase->user_id, buyer.user_id);
+  EXPECT_EQ(purchase->publication_id, publication.publication_id);
+  EXPECT_EQ(purchase->purchased_at, k_purchased_at);
+
+  const auto count = m_metadata.purchase_count(publication.publication_id);
+  ASSERT_TRUE(count.has_value());
+  EXPECT_EQ(count.value(), 1U);
+
+  std::filesystem::remove(m_root / "metadata" / "receipts");
+
+  const auto stored = m_metadata.has_receipt(purchase->purchase_id);
+  ASSERT_TRUE(stored.has_value());
+  EXPECT_FALSE(stored.value());
+
+  const auto found = m_metadata.find_receipt(purchase->purchase_id, device->public_key);
+  ASSERT_FALSE(found.has_value());
+  EXPECT_EQ(found.error(), CoreError::receipt_not_found);
 }
 
 TEST_F(PurchaseServiceTest, KeepsConsolidatedStateOnRepeatRequest) {
