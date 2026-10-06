@@ -45,8 +45,18 @@ TEST(MemoryProtection, ClaimsNothingForEmptyRange) {
   EXPECT_EQ(release_memory(nullptr, 0), MemoryLock::locked);
 }
 
+#if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__)
+#define DGDS_SANITIZED 1
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer) || __has_feature(address_sanitizer)
+#define DGDS_SANITIZED 1
+#endif
+#endif
+
 TEST(MemoryProtection, ReportsRefusedCalls) {
-#if defined(__linux__)
+#if defined(DGDS_SANITIZED)
+  GTEST_SKIP() << "санитайзер перехватывает вызовы блокировки и сообщает успех там, где ядро отказало бы";
+#elif defined(__linux__)
   const std::size_t page = page_size();
   const auto unmapped = reinterpret_cast<void *>(1);
 
