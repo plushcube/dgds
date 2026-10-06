@@ -252,6 +252,13 @@ protected:
         {"credentials", Json::parse(buyer_credentials)}, {"purchase_id", purchase_id}, {"device_key", device_key}})));
     ASSERT_TRUE(fetched.contains("data")) << fetched.dump();
 
+    const std::string_view line = k_text.substr(0, k_text.size() - 1);
+    EXPECT_EQ(canonical_form(fetched.dump()).find(line), std::string::npos)
+        << "в ответе выдачи не должно быть открытого текста";
+    EXPECT_NE(canonical_form(fetched.dump()).find(fetched.at("data").at("author_name").get<std::string>()),
+              std::string::npos)
+        << "проверка отсутствия открытого текста была бы пустой: нелатинский текст в ответе не экранируется";
+
     const auto receipt_key = open_receipt_key(receipt_of(receipt.at("data")), device->private_key);
     ASSERT_TRUE(receipt_key.has_value());
 
